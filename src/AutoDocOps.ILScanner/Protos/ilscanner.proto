@@ -1,0 +1,204 @@
+syntax = "proto3";
+
+option csharp_namespace = "AutoDocOps.ILScanner";
+
+package ilscanner;
+
+// The IL Scanner service definition
+service ILScannerService {
+  // Analyzes a .NET project and returns metadata
+  rpc AnalyzeProject (AnalyzeProjectRequest) returns (AnalyzeProjectResponse);
+  
+  // Analyzes SQL scripts and returns metadata
+  rpc AnalyzeSql (AnalyzeSqlRequest) returns (AnalyzeSqlResponse);
+  
+  // Health check
+  rpc HealthCheck (HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// Request to analyze a .NET project
+message AnalyzeProjectRequest {
+  string project_path = 1;
+  string project_name = 2;
+  repeated string source_files = 3;
+  string target_framework = 4;
+}
+
+// Response with analyzed project metadata
+message AnalyzeProjectResponse {
+  bool success = 1;
+  string error_message = 2;
+  ProjectMetadata metadata = 3;
+}
+
+// Project metadata structure
+message ProjectMetadata {
+  string project_name = 1;
+  string target_framework = 2;
+  repeated ClassMetadata classes = 3;
+  repeated InterfaceMetadata interfaces = 4;
+  repeated MethodMetadata methods = 5;
+  repeated PropertyMetadata properties = 6;
+  int32 total_lines = 7;
+  int64 analysis_timestamp = 8;
+}
+
+// Class metadata
+message ClassMetadata {
+  string name = 1;
+  string namespace = 2;
+  string access_modifier = 3;
+  bool is_abstract = 4;
+  bool is_sealed = 5;
+  string base_class = 6;
+  repeated string interfaces = 7;
+  repeated MethodMetadata methods = 8;
+  repeated PropertyMetadata properties = 9;
+  string documentation = 10;
+  string file_path = 11;
+  int32 line_number = 12;
+}
+
+// Interface metadata
+message InterfaceMetadata {
+  string name = 1;
+  string namespace = 2;
+  string access_modifier = 3;
+  repeated string base_interfaces = 4;
+  repeated MethodMetadata methods = 5;
+  repeated PropertyMetadata properties = 6;
+  string documentation = 7;
+  string file_path = 8;
+  int32 line_number = 9;
+}
+
+// Method metadata
+message MethodMetadata {
+  string name = 1;
+  string return_type = 2;
+  string access_modifier = 3;
+  bool is_static = 4;
+  bool is_virtual = 5;
+  bool is_override = 6;
+  bool is_async = 7;
+  repeated ParameterMetadata parameters = 8;
+  string documentation = 9;
+  string file_path = 10;
+  int32 line_number = 11;
+}
+
+// Property metadata
+message PropertyMetadata {
+  string name = 1;
+  string type = 2;
+  string access_modifier = 3;
+  bool has_getter = 4;
+  bool has_setter = 5;
+  bool is_static = 6;
+  string documentation = 7;
+  string file_path = 8;
+  int32 line_number = 9;
+}
+
+// Parameter metadata
+message ParameterMetadata {
+  string name = 1;
+  string type = 2;
+  bool is_optional = 3;
+  string default_value = 4;
+}
+
+// SQL analysis request
+message AnalyzeSqlRequest {
+  string sql_content = 1;
+  string database_type = 2; // postgresql, mysql, sqlserver, etc.
+}
+
+// SQL analysis response
+message AnalyzeSqlResponse {
+  bool success = 1;
+  string error_message = 2;
+  SqlMetadata metadata = 3;
+}
+
+// SQL metadata structure
+message SqlMetadata {
+  repeated TableMetadata tables = 1;
+  repeated ViewMetadata views = 2;
+  repeated StoredProcedureMetadata stored_procedures = 3;
+  repeated FunctionMetadata functions = 4;
+  int64 analysis_timestamp = 5;
+}
+
+// Table metadata
+message TableMetadata {
+  string name = 1;
+  string schema = 2;
+  repeated ColumnMetadata columns = 3;
+  repeated IndexMetadata indexes = 4;
+  repeated ForeignKeyMetadata foreign_keys = 5;
+}
+
+// Column metadata
+message ColumnMetadata {
+  string name = 1;
+  string data_type = 2;
+  bool is_nullable = 3;
+  bool is_primary_key = 4;
+  bool is_identity = 5;
+  string default_value = 6;
+  int32 max_length = 7;
+}
+
+// Index metadata
+message IndexMetadata {
+  string name = 1;
+  bool is_unique = 2;
+  repeated string columns = 3;
+}
+
+// Foreign key metadata
+message ForeignKeyMetadata {
+  string name = 1;
+  string referenced_table = 2;
+  string referenced_schema = 3;
+  repeated string columns = 4;
+  repeated string referenced_columns = 5;
+}
+
+// View metadata
+message ViewMetadata {
+  string name = 1;
+  string schema = 2;
+  string definition = 3;
+  repeated ColumnMetadata columns = 4;
+}
+
+// Stored procedure metadata
+message StoredProcedureMetadata {
+  string name = 1;
+  string schema = 2;
+  repeated ParameterMetadata parameters = 3;
+  string definition = 4;
+}
+
+// Function metadata
+message FunctionMetadata {
+  string name = 1;
+  string schema = 2;
+  string return_type = 3;
+  repeated ParameterMetadata parameters = 4;
+  string definition = 5;
+}
+
+// Health check request
+message HealthCheckRequest {
+}
+
+// Health check response
+message HealthCheckResponse {
+  bool is_healthy = 1;
+  string version = 2;
+  int64 timestamp = 3;
+}
+

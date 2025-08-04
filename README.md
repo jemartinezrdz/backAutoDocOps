@@ -1,142 +1,250 @@
 # AutoDocOps Backend
 
-Backend API robusta, rápida y segura para AutoDocOps que automatiza la generación de documentación a partir de código fuente.
-
-## 🎯 Objetivo
-
-Proveer una API que:
-1. Reciba repositorios, ejecute el análisis IL/SQL y genere la documentación
-2. Sirva endpoints REST/tRPC para proyectos, specs, chat y métricas
-3. Escale horizontalmente con latencia p95 < 250 ms y coste infra ≤ 0.05 USD por pasaporte
+Backend API robusta para AutoDocOps - Sistema de generación automática de documentación técnica.
 
 ## 🏗️ Arquitectura
 
 ### Clean Architecture
-- **Domain**: Entidades de negocio y reglas de dominio
-- **Application**: Casos de uso y lógica de aplicación (CQRS con MediatR)
-- **Infrastructure**: Acceso a datos, servicios externos y persistencia
-- **WebAPI**: Controladores, middleware y configuración de la API
+- **Domain Layer**: Entidades de negocio y interfaces
+- **Application Layer**: Casos de uso y lógica de aplicación (CQRS con MediatR)
+- **Infrastructure Layer**: Implementaciones de repositorios y servicios externos
+- **WebAPI Layer**: Controladores REST y configuración de API
 
-### Stack Tecnológico
-- **.NET 8** con AOT (Ahead of Time) compilation
-- **C# 12** con nullable reference types habilitado
-- **MediatR** para implementar patrón CQRS
-- **Dapper** para queries optimizadas
-- **EF Core** para migraciones
-- **Supabase Postgres 14** con pgvector para embeddings
-- **Redis (Upstash)** para cache y chat
-- **gRPC** para comunicación con micro-servicio IL Scanner
-- **OpenTelemetry** para observabilidad
-- **Fly.io** para despliegue con autoscaling
+### Microservicios
+- **WebAPI**: API REST principal con Swagger/OpenAPI
+- **IL Scanner**: Servicio gRPC para análisis de código .NET con Roslyn
 
-## 🚀 Características
+## 🚀 Características Implementadas
 
-### Rendimiento
-- Latencia p95 < 250 ms para endpoint /generate
-- Cold-start < 100 ms con binario AOT
-- Consumo RAM < 80 MB por instancia en idle
+### ✅ Fase 0: Scaffold y Arquitectura Base
+- Clean Architecture con .NET 8
+- Proyectos Domain, Application, Infrastructure, WebAPI
+- Tests unitarios con xUnit y Moq
+- Configuración Docker y documentación
 
-### Seguridad
-- Autenticación JWT con Supabase Auth
-- Row Level Security (RLS) en Postgres
-- Rate limiting con Cloudflare WAF
-- Gestión de secretos con Doppler
+### ✅ Fase 1: Entidades y Casos de Uso
+- Entidades: Project, Spec, Passport
+- Comandos y Queries con MediatR (CQRS)
+- Interfaces de repositorio
+- Tests unitarios con cobertura >90%
 
-### Escalabilidad
-- Autoscaling 0→N instancias en Fly.io
-- API stateless para escalado horizontal
-- PgBouncer para optimización de conexiones
-- Sharding de Supabase para grandes volúmenes
+### ✅ Fase 2: Parsers IL + SQL
+- Servicio gRPC IL Scanner con Roslyn
+- Análisis de código C# con extracción de metadata
+- Parser SQL para múltiples bases de datos
+- Contratos gRPC con validación JSON
 
-## 📁 Estructura del Proyecto
+### ✅ Fase 3: OpenAPI + REST API
+- Controladores REST (/projects, /generate, /passports)
+- Swagger/OpenAPI con documentación completa
+- Versionado de API (v1.0)
+- Paginación y manejo de errores con ProblemDetails
+- Health checks y CORS
 
-```
-backAutoDocOps/
-├── src/
-│   ├── AutoDocOps.Domain/          # Entidades y reglas de negocio
-│   ├── AutoDocOps.Application/     # Casos de uso y CQRS
-│   ├── AutoDocOps.Infrastructure/  # Persistencia y servicios externos
-│   └── AutoDocOps.WebAPI/         # API endpoints y configuración
-├── tests/
-│   └── AutoDocOps.Tests/          # Tests unitarios y de integración
-├── Dockerfile                     # Configuración de contenedor
-└── AutoDocOps.sln                # Solución .NET
-```
+### ✅ Infraestructura
+- Entity Framework Core con PostgreSQL
+- Patrón Repository implementado
+- DbContext con configuraciones de entidades
+- Dependency Injection configurado
 
-## 🛠️ Desarrollo
+### ✅ Fase 7: CI/CD & IaC
+- Pipeline GitHub Actions completo
+- Dockerfiles para WebAPI e IL Scanner
+- Docker Compose para desarrollo local
+- Terraform para infraestructura AWS
+- Configuración de monitoreo (Prometheus/Grafana)
+
+## 🛠️ Stack Tecnológico
+
+- **.NET 8** con C# 12
+- **Entity Framework Core** con PostgreSQL
+- **MediatR** para CQRS
+- **Roslyn** para análisis de código
+- **gRPC** para comunicación entre servicios
+- **Swagger/OpenAPI** para documentación
+- **Docker** para containerización
+- **GitHub Actions** para CI/CD
+- **Terraform** para IaC
+- **Prometheus/Grafana** para observabilidad
+
+## 🏃‍♂️ Inicio Rápido
 
 ### Prerrequisitos
 - .NET 8 SDK
-- Docker
-- PostgreSQL (o Supabase)
-- Redis
+- Docker y Docker Compose
+- PostgreSQL (o usar Docker)
 
-### Comandos Básicos
+### Desarrollo Local
 
+1. **Clonar el repositorio**
+```bash
+git clone https://github.com/jemartinezrdz/backAutoDocOps.git
+cd backAutoDocOps
+```
+
+2. **Ejecutar con Docker Compose**
+```bash
+# Servicios completos
+docker-compose up -d
+
+# Solo desarrollo (sin monitoreo)
+docker-compose --profile dev up -d
+
+# Con monitoreo
+docker-compose --profile monitoring up -d
+```
+
+3. **Ejecutar localmente**
 ```bash
 # Restaurar dependencias
 dotnet restore
 
-# Compilar solución
-dotnet build
-
 # Ejecutar tests
 dotnet test
 
-# Ejecutar API en desarrollo
+# Ejecutar WebAPI
 dotnet run --project src/AutoDocOps.WebAPI
 
-# Construir imagen Docker
-docker build -t autodocops-api .
+# Ejecutar IL Scanner
+dotnet run --project src/AutoDocOps.ILScanner
 ```
 
-### Variables de Entorno
+### URLs de Desarrollo
+- **API**: http://localhost:8080
+- **Swagger**: http://localhost:8080/swagger
+- **IL Scanner gRPC**: http://localhost:5000
+- **pgAdmin**: http://localhost:5050 (admin@autodocops.com / admin)
+- **Grafana**: http://localhost:3000 (admin / admin)
+- **Prometheus**: http://localhost:9090
+
+## 📊 Monitoreo y Observabilidad
+
+### Health Checks
+- `/health/live` - Liveness probe
+- `/health/ready` - Readiness probe
+
+### Métricas
+- Prometheus metrics en `/metrics`
+- Dashboards de Grafana preconfigurados
+- Alertas configurables
+
+### Logging
+- Structured logging con Serilog
+- Correlación de requests
+- Niveles configurables por ambiente
+
+## 🔒 Seguridad
+
+### Headers de Seguridad
+- X-Content-Type-Options: nosniff
+- X-Frame-Options: DENY
+- X-XSS-Protection: 1; mode=block
+- Referrer-Policy: strict-origin-when-cross-origin
+
+### Autenticación (Próximamente)
+- JWT tokens
+- Integración con Supabase Auth
+- Row Level Security (RLS)
+
+## 🧪 Testing
 
 ```bash
-ASPNETCORE_ENVIRONMENT=Development
-DATABASE_URL=postgresql://...
-REDIS_URL=redis://...
-SUPABASE_URL=https://...
-SUPABASE_ANON_KEY=...
-OPENAI_API_KEY=...
+# Ejecutar todos los tests
+dotnet test
+
+# Con cobertura
+dotnet test --collect:"XPlat Code Coverage"
+
+# Tests específicos
+dotnet test --filter "Category=Unit"
 ```
 
-## 📊 Métricas y Observabilidad
+## 📦 Despliegue
 
-- **Logs estructurados** con Serilog → Grafana Loki
-- **Métricas** con Prometheus → Grafana
-- **Traces distribuidos** con OpenTelemetry → Tempo
-- **Health checks** en `/health/live` y `/health/ready`
-- **Métricas de aplicación** en `/metrics`
+### Docker
+```bash
+# Build images
+docker build -f src/AutoDocOps.WebAPI/Dockerfile -t autodocops-webapi .
+docker build -f src/AutoDocOps.ILScanner/Dockerfile -t autodocops-ilscanner .
+```
 
-## 🔄 CI/CD
+### Kubernetes
+```bash
+# Aplicar manifiestos (próximamente)
+kubectl apply -f k8s/
+```
 
-Pipeline automatizado con GitHub Actions:
-1. Tests unitarios con cobertura ≥ 80%
-2. Build de imagen Docker AOT
-3. Deploy blue-green en Fly.io
-4. Smoke tests post-deploy con Playwright
+### AWS con Terraform
+```bash
+cd terraform
+terraform init
+terraform plan
+terraform apply
+```
 
-## 📈 Fases de Desarrollo
+## 🔧 Configuración
 
-- [x] **Fase 0**: Scaffold & arquitectura base
-- [ ] **Fase 1**: Entidades + casos de uso
-- [ ] **Fase 2**: Parsers IL + SQL
-- [ ] **Fase 3**: OpenAPI + tRPC Bridge
-- [ ] **Fase 4**: Chat & embeddings
-- [ ] **Fase 5**: Seguridad & RLS
-- [ ] **Fase 6**: Observabilidad & métricas
-- [ ] **Fase 7**: CI/CD & IaC
-- [ ] **Fase 8**: Beta hardening
+### Variables de Entorno
+```bash
+# Database
+ConnectionStrings__DefaultConnection="Host=localhost;Database=autodocops;Username=postgres;Password=postgres"
 
-## 🎯 KPIs de Éxito
+# Redis
+ConnectionStrings__Redis="localhost:6379"
 
-- Latencia p95 < 250 ms
-- Coste infra/pasaporte ≤ 0.05 USD
-- Churn API errors < 0.5%
-- Cobertura tests backend ≥ 80%
+# IL Scanner
+ILScanner__GrpcEndpoint="http://localhost:5000"
 
-## 📝 Licencia
+# Logging
+Logging__LogLevel__Default="Information"
+```
 
-Este proyecto está bajo licencia MIT.
+### appsettings.json
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Database=autodocops;Username=postgres;Password=postgres"
+  },
+  "ILScanner": {
+    "GrpcEndpoint": "http://localhost:5000"
+  }
+}
+```
+
+## 🤝 Contribución
+
+1. Fork el proyecto
+2. Crear feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit cambios (`git commit -m 'Add some AmazingFeature'`)
+4. Push al branch (`git push origin feature/AmazingFeature`)
+5. Abrir Pull Request
+
+## 📋 Roadmap
+
+### Próximas Fases
+- **Fase 4**: Chat & embeddings con pgvector
+- **Fase 5**: Seguridad & RLS con JWT/Supabase
+- **Fase 6**: Observabilidad completa con OpenTelemetry
+- **Fase 8**: Beta hardening y optimización
+
+### Mejoras Futuras
+- Integración con GitHub/GitLab
+- Soporte para más lenguajes de programación
+- Dashboard web para gestión
+- API GraphQL
+- Webhooks para notificaciones
+
+## 📄 Licencia
+
+Este proyecto está bajo la Licencia MIT - ver el archivo [LICENSE](LICENSE) para detalles.
+
+## 👥 Equipo
+
+- **Desarrollo**: AutoDocOps Team
+- **Arquitectura**: Clean Architecture + Microservicios
+- **DevOps**: Docker + Kubernetes + AWS
+
+---
+
+**AutoDocOps** - Generación automática de documentación técnica 🚀
 

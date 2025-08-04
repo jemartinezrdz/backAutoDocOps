@@ -1,4 +1,5 @@
 using AutoDocOps.Application.Projects.Commands.CreateProject;
+using AutoDocOps.Infrastructure;
 using Asp.Versioning;
 using Asp.Versioning.ApiExplorer;
 using Microsoft.OpenApi.Models;
@@ -11,6 +12,9 @@ builder.Services.AddControllers();
 
 // Add MediatR
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(CreateProjectCommand).Assembly));
+
+// Add Infrastructure
+builder.Services.AddInfrastructure(builder.Configuration);
 
 // Add API versioning
 builder.Services.AddApiVersioning(opt =>
@@ -99,9 +103,9 @@ builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 
-// TODO: Add repository implementations
-// TODO: Add database context
-// TODO: Add authentication/authorization
+// TODO: Add authentication/authorization (JWT, Supabase)
+// TODO: Add chat & embeddings services
+// TODO: Add observability (OpenTelemetry)
 
 var app = builder.Build();
 

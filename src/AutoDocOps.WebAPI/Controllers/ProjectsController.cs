@@ -1,5 +1,6 @@
 using AutoDocOps.Application.Projects.Commands.CreateProject;
 using AutoDocOps.Application.Projects.Queries.GetProjects;
+using AutoDocOps.Application.Projects.Queries.GetProject;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
@@ -94,10 +95,17 @@ public class ProjectsController : ControllerBase
     {
         try
         {
-            // TODO: Implement GetProjectByIdQuery
             _logger.LogInformation("Retrieving project {ProjectId}", id);
             
-            // Placeholder implementation
+            var query = new GetProjectQuery(id);
+            var result = await _mediator.Send(query);
+            
+            return Ok(result.Project);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Project {ProjectId} not found", id);
+            
             return NotFound(new ProblemDetails
             {
                 Title = "Project not found",

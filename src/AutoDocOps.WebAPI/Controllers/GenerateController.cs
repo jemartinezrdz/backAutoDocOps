@@ -1,4 +1,6 @@
 using AutoDocOps.Application.Passports.Commands.GeneratePassport;
+using AutoDocOps.Application.Passports.Queries.GetGenerationStatus;
+using AutoDocOps.Application.Passports.Commands.CancelGeneration;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
@@ -47,7 +49,7 @@ public class GenerateController : ControllerBase
                 request.ProjectId, result.Id);
 
             // Return 202 Accepted since this is an async operation
-            Response.Headers.Add("Location", $"/api/v1/passports/{result.Id}");
+            Response.Headers.Append("Location", $"/api/v1/passports/{result.Id}");
             return Accepted(result);
         }
         catch (ArgumentException ex)
@@ -87,19 +89,34 @@ public class GenerateController : ControllerBase
     {
         try
         {
-            // TODO: Implement GetLatestPassportByProjectIdQuery
             _logger.LogInformation("Retrieving generation status for project {ProjectId}", projectId);
             
-            // Placeholder implementation
+            // Get the latest passport for the project to check status
+            var passports = await _mediator.Send(new AutoDocOps.Application.Passports.Queries.GetPassportsByProject.GetPassportsByProjectQuery(projectId, 1, 1));
+            
+            if (!passports.Passports.Any())
+            {
+                return NotFound(new ProblemDetails
+                {
+                    Title = "No generation found",
+                    Detail = $"No documentation generation found for project {projectId}",
+                    Status = StatusCodes.Status404NotFound
+                });
+            }
+
+            var latestPassport = passports.Passports.First();
+            var query = new GetGenerationStatusQuery(latestPassport.Id);
+            var result = await _mediator.Send(query);
+            
             var status = new GenerationStatusResponse(
                 projectId,
-                Guid.NewGuid(),
-                "Generating",
-                0,
-                "Analyzing project structure...",
+                result.PassportId,
+                result.Status.ToString(),
+                result.ProgressPercentage,
+                result.CurrentStep ?? "Processing...",
                 DateTime.UtcNow,
-                null,
-                null
+                result.EstimatedCompletion,
+                result.ErrorMessage
             );
 
             return Ok(status);
@@ -130,10 +147,40 @@ public class GenerateController : ControllerBase
     {
         try
         {
-            // TODO: Implement CancelGenerationCommand
             _logger.LogInformation("Cancelling documentation generation for project {ProjectId}", projectId);
             
-            return Ok(new { Message = "Generation cancelled successfully" });
+            // Get the latest generating passport for the project
+            var passports = await _mediator.Send(new AutoDocOps.Application.Passports.Queries.GetPassportsByProject.GetPassportsByProjectQuery(projectId, 1, 1));
+            
+            if (!passports.Passports.Any())
+            {
+                return NotFound(new ProblemDetails
+                {
+                    Title = "No generation found",
+                    Detail = $"No active generation found for project {projectId}",
+                    Status = StatusCodes.Status404NotFound
+                });
+            }
+
+            var latestPassport = passports.Passports.First();
+            
+            // TODO: Get cancellation requester from authenticated user context
+            var cancelledBy = Guid.NewGuid(); // Placeholder - should come from auth context
+            
+            var command = new CancelGenerationCommand(latestPassport.Id, cancelledBy);
+            var result = await _mediator.Send(command);
+            
+            if (!result.Success)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Cannot cancel generation",
+                    Detail = result.Message,
+                    Status = StatusCodes.Status400BadRequest
+                });
+            }
+            
+            return Ok(new { Message = result.Message });
         }
         catch (Exception ex)
         {

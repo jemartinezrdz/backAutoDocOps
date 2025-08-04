@@ -1,9 +1,11 @@
 using AutoDocOps.Domain.Interfaces;
 using AutoDocOps.Infrastructure.Data;
 using AutoDocOps.Infrastructure.Repositories;
+using AutoDocOps.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace AutoDocOps.Infrastructure;
 
@@ -38,6 +40,9 @@ public static class DependencyInjection
         services.AddScoped<IProjectRepository, ProjectRepository>();
         services.AddScoped<ISpecRepository, SpecRepository>();
         services.AddScoped<IPassportRepository, PassportRepository>();
+
+        // Add background services
+        services.AddHostedService<DocumentationGenerationService>();
 
         return services;
     }

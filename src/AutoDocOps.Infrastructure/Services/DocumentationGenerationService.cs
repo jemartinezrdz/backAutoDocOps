@@ -22,28 +22,34 @@ public class DocumentationGenerationService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Documentation Generation Service started");
+        _logger.LogInformation("Documentation Generation Service started at {StartTime}", DateTime.UtcNow);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
+                using var activity = _logger.BeginScope(new Dictionary<string, object>
+                {
+                    ["Operation"] = "ProcessPendingPassports",
+                    ["Timestamp"] = DateTime.UtcNow
+                });
+
                 await ProcessPendingPassports(stoppingToken);
                 await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); // Check every 30 seconds
             }
             catch (OperationCanceledException)
             {
-                // Expected when cancellation is requested
+                _logger.LogInformation("Documentation Generation Service is shutting down gracefully");
                 break;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in documentation generation service");
+                _logger.LogError(ex, "Critical error in documentation generation service at {ErrorTime}", DateTime.UtcNow);
                 await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken); // Wait before retrying
             }
         }
 
-        _logger.LogInformation("Documentation Generation Service stopped");
+        _logger.LogInformation("Documentation Generation Service stopped at {StopTime}", DateTime.UtcNow);
     }
 
     private async Task ProcessPendingPassports(CancellationToken cancellationToken)
@@ -53,19 +59,36 @@ public class DocumentationGenerationService : BackgroundService
         var projectRepository = scope.ServiceProvider.GetRequiredService<IProjectRepository>();
 
         var pendingPassports = await passportRepository.GetByStatusAsync(PassportStatus.Generating, cancellationToken);
+        
+        _logger.LogInformation("Found {PendingCount} passports to process", pendingPassports.Count());
 
         foreach (var passport in pendingPassports)
         {
             if (cancellationToken.IsCancellationRequested)
                 break;
 
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            
             try
             {
+                using var passportScope = _logger.BeginScope(new Dictionary<string, object>
+                {
+                    ["PassportId"] = passport.Id,
+                    ["ProjectId"] = passport.ProjectId,
+                    ["Operation"] = "ProcessPassport"
+                });
+
                 await ProcessPassport(passport, projectRepository, passportRepository, cancellationToken);
+                
+                stopwatch.Stop();
+                _logger.LogInformation("Successfully processed passport {PassportId} in {ProcessingTimeMs}ms", 
+                    passport.Id, stopwatch.ElapsedMilliseconds);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing passport {PassportId}", passport.Id);
+                stopwatch.Stop();
+                _logger.LogError(ex, "Failed to process passport {PassportId} after {ProcessingTimeMs}ms: {ErrorMessage}", 
+                    passport.Id, stopwatch.ElapsedMilliseconds, ex.Message);
                 
                 // Mark as failed
                 passport.Status = PassportStatus.Failed;

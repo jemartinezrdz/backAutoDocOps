@@ -1,11 +1,19 @@
+using AutoDocOps.Application.Authentication.Models;
+using AutoDocOps.Application.Authentication.Services;
 using AutoDocOps.Domain.Interfaces;
+using AutoDocOps.Infrastructure.Authentication;
 using AutoDocOps.Infrastructure.Data;
+using AutoDocOps.Infrastructure.HealthChecks;
 using AutoDocOps.Infrastructure.Repositories;
 using AutoDocOps.Infrastructure.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 namespace AutoDocOps.Infrastructure;
 
@@ -43,6 +51,60 @@ public static class DependencyInjection
 
         // Add background services
         services.AddHostedService<DocumentationGenerationService>();
+
+        // Configure JWT settings
+        services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));
+
+        // Add authentication services
+        services.AddScoped<IJwtTokenService, JwtTokenService>();
+
+        // Add authorization handlers
+        services.AddScoped<IAuthorizationHandler, OrganizationAuthorizationHandler>();
+
+        // Configure JWT authentication
+        var jwtSettings = configuration.GetSection("JwtSettings").Get<JwtSettings>();
+        if (jwtSettings != null && !string.IsNullOrEmpty(jwtSettings.SecretKey))
+        {
+            var key = Encoding.UTF8.GetBytes(jwtSettings.SecretKey);
+            
+            services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            })
+            .AddJwtBearer(options =>
+            {
+                options.RequireHttpsMetadata = false; // Set to true in production
+                options.SaveToken = true;
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new SymmetricSecurityKey(key),
+                    ValidateIssuer = true,
+                    ValidIssuer = jwtSettings.Issuer,
+                    ValidateAudience = true,
+                    ValidAudience = jwtSettings.Audience,
+                    ValidateLifetime = true,
+                    ClockSkew = TimeSpan.Zero
+                };
+            });
+
+            services.AddAuthorization(options =>
+            {
+                options.AddPolicy("OrganizationAccess", policy =>
+                    policy.Requirements.Add(new OrganizationRequirement()));
+                
+                options.AddPolicy("AdminOnly", policy =>
+                    policy.RequireRole("Admin"));
+                
+                options.AddPolicy("DeveloperOrAdmin", policy =>
+                    policy.RequireRole("Developer", "Admin"));
+            });
+        }
+
+        // Add Health Checks
+        services.AddHealthChecks()
+            .AddCheck<DocumentationServiceHealthCheck>("documentation_service");
 
         return services;
     }

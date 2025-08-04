@@ -13,7 +13,7 @@ builder.Services.AddControllers();
 // Add MediatR
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(CreateProjectCommand).Assembly));
 
-// Add Infrastructure
+// Add Infrastructure (includes authentication)
 builder.Services.AddInfrastructure(builder.Configuration);
 
 // Add API versioning
@@ -137,7 +137,9 @@ app.Use(async (context, next) =>
 
 app.UseCors();
 
-// TODO: Add authentication middleware
+// Add authentication & authorization middleware
+app.UseAuthentication();
+app.UseAuthorization();
 // app.UseAuthentication();
 // app.UseAuthorization();
 
@@ -161,8 +163,12 @@ app.MapGet("/", () => new
     Documentation = "/swagger"
 }).WithTags("Info");
 
+// Add health check endpoints
+app.MapHealthChecks("/health");
+
 Console.WriteLine("AutoDocOps API starting...");
 Console.WriteLine($"Environment: {app.Environment.EnvironmentName}");
 Console.WriteLine("Swagger UI available at: /swagger");
+Console.WriteLine("Health checks available at: /health");
 
-app.Run();
+await app.RunAsync();

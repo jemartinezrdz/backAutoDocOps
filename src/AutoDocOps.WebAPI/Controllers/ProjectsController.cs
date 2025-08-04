@@ -2,8 +2,10 @@ using AutoDocOps.Application.Projects.Commands.CreateProject;
 using AutoDocOps.Application.Projects.Queries.GetProjects;
 using AutoDocOps.Application.Projects.Queries.GetProject;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 
 namespace AutoDocOps.WebAPI.Controllers;
 
@@ -11,6 +13,7 @@ namespace AutoDocOps.WebAPI.Controllers;
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/[controller]")]
 [Produces("application/json")]
+[Authorize(Policy = "DeveloperOrAdmin")]
 public class ProjectsController : ControllerBase
 {
     private readonly IMediator _mediator;
@@ -32,6 +35,7 @@ public class ProjectsController : ControllerBase
     [HttpGet]
     [ProducesResponseType(typeof(GetProjectsResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<GetProjectsResponse>> GetProjects(
         [FromQuery, Required] Guid organizationId,
@@ -40,6 +44,15 @@ public class ProjectsController : ControllerBase
     {
         try
         {
+            // Validate user has access to this organization
+            var userOrganizationId = User.FindFirst("OrganizationId")?.Value;
+            if (string.IsNullOrEmpty(userOrganizationId) || 
+                !Guid.TryParse(userOrganizationId, out var userOrgId) ||
+                userOrgId != organizationId)
+            {
+                return Forbid("Access denied to this organization");
+            }
+
             // Validate parameters
             if (page < 1)
             {

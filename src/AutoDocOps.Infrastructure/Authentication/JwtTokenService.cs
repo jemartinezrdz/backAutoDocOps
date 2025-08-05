@@ -13,11 +13,13 @@ public class JwtTokenService : IJwtTokenService
 {
     private readonly JwtSettings _jwtSettings;
     private readonly JwtSecurityTokenHandler _tokenHandler;
+    private readonly IRefreshTokenStore? _refreshTokenStore;
 
-    public JwtTokenService(IOptions<JwtSettings> jwtSettings)
+    public JwtTokenService(IOptions<JwtSettings> jwtSettings, IRefreshTokenStore? refreshTokenStore = null)
     {
         _jwtSettings = jwtSettings.Value;
         _tokenHandler = new JwtSecurityTokenHandler();
+        _refreshTokenStore = refreshTokenStore;
     }
 
     public string GenerateToken(Guid userId, string email, IEnumerable<string> roles, Guid? organizationId = null)
@@ -92,16 +94,28 @@ public class JwtTokenService : IJwtTokenService
 
     public bool ValidateRefreshToken(string refreshToken)
     {
-        // In a real implementation, you would validate against stored refresh tokens
-        // For now, we'll just check if it's a valid base64 string
+        // Validate against stored refresh tokens
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            return false;
+        }
+        
         try
         {
             Convert.FromBase64String(refreshToken);
-            return true;
         }
         catch
         {
             return false;
         }
+
+        // If refresh token store is available, validate against stored tokens
+        if (_refreshTokenStore != null)
+        {
+            return _refreshTokenStore.IsValidRefreshTokenAsync(refreshToken).GetAwaiter().GetResult();
+        }
+
+        // Fallback: basic validation for development/testing
+        return true;
     }
 }

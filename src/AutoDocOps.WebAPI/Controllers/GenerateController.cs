@@ -2,8 +2,10 @@ using AutoDocOps.Application.Passports.Commands.GeneratePassport;
 using AutoDocOps.Application.Passports.Queries.GetGenerationStatus;
 using AutoDocOps.Application.Passports.Commands.CancelGeneration;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 
 namespace AutoDocOps.WebAPI.Controllers;
 
@@ -11,6 +13,7 @@ namespace AutoDocOps.WebAPI.Controllers;
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/[controller]")]
 [Produces("application/json")]
+[Authorize(Policy = "DeveloperOrAdmin")]
 public class GenerateController : ControllerBase
 {
     private readonly IMediator _mediator;
@@ -164,8 +167,17 @@ public class GenerateController : ControllerBase
 
             var latestPassport = passports.Passports.First();
             
-            // TODO: Get cancellation requester from authenticated user context
-            var cancelledBy = Guid.NewGuid(); // Placeholder - should come from auth context
+            // Get cancellation requester from authenticated user context
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("sub");
+            if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var cancelledBy))
+            {
+                return Unauthorized(new ProblemDetails
+                {
+                    Title = "Unauthorized",
+                    Detail = "Authenticated user ID not found or invalid.",
+                    Status = StatusCodes.Status401Unauthorized
+                });
+            }
             
             var command = new CancelGenerationCommand(latestPassport.Id, cancelledBy);
             var result = await _mediator.Send(command);

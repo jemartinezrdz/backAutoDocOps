@@ -49,6 +49,10 @@ public static class DependencyInjection
         services.AddScoped<ISpecRepository, SpecRepository>();
         services.AddScoped<IPassportRepository, PassportRepository>();
 
+        // Configure options
+        services.Configure<DocumentationGenerationOptions>(
+            configuration.GetSection(DocumentationGenerationOptions.SectionName));
+
         // Add background services
         services.AddHostedService<DocumentationGenerationService>();
 
@@ -74,7 +78,9 @@ public static class DependencyInjection
             })
             .AddJwtBearer(options =>
             {
-                options.RequireHttpsMetadata = false; // Set to true in production
+                // Only disable HTTPS metadata in development
+                var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+                options.RequireHttpsMetadata = env != "Development";
                 options.SaveToken = true;
                 options.TokenValidationParameters = new TokenValidationParameters
                 {

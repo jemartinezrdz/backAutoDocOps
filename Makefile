@@ -1,18 +1,27 @@
-.PHONY: help build up down logs test clean
+.PHONY: help build build-docker up up-dev up-prod up-monitoring down logs test clean setup-env migrate-db
 
 # Default target
 help:
 	@echo "AutoDocOps Backend - Available commands:"
 	@echo ""
-	@echo "  make build     - Build the .NET application"
-	@echo "  make up        - Start all services with docker-compose"
-	@echo "  make up-dev    - Start services with development override"
+	@echo "Build commands:"
+	@echo "  make build        - Build the .NET application"
+	@echo "  make build-docker - Build Docker images"
+	@echo ""
+	@echo "Run commands:"
+	@echo "  make up           - Start all services with docker-compose"
+	@echo "  make up-dev       - Start services with development override"
+	@echo "  make up-prod      - Start services for production"
 	@echo "  make up-monitoring - Start services with monitoring (Grafana/Prometheus)"
-	@echo "  make down      - Stop all services"
-	@echo "  make logs      - Show logs from all services"
-	@echo "  make test      - Run unit tests"
-	@echo "  make clean     - Clean build artifacts"
-	@echo "  make setup-env - Copy .env.example to .env"
+	@echo "  make down         - Stop all services"
+	@echo ""
+	@echo "Development commands:"
+	@echo "  make logs         - Show logs from all services"
+	@echo "  make test         - Run unit tests"
+	@echo "  make test-coverage - Run tests with coverage report"
+	@echo "  make clean        - Clean build artifacts"
+	@echo "  make setup-env    - Copy .env.example to .env"
+	@echo "  make migrate-db   - Run database migrations"
 	@echo ""
 	@echo "Quick start:"
 	@echo "  1. make setup-env"
@@ -24,6 +33,11 @@ build:
 	@echo "Building AutoDocOps backend..."
 	dotnet build src/AutoDocOps.WebAPI --configuration Release
 
+# Build Docker images
+build-docker:
+	@echo "Building Docker images..."
+	docker compose build
+
 # Start all services
 up:
 	@echo "Starting AutoDocOps services..."
@@ -33,6 +47,11 @@ up:
 up-dev:
 	@echo "Starting AutoDocOps services (development mode)..."
 	docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
+
+# Start for production
+up-prod:
+	@echo "Starting AutoDocOps services (production mode)..."
+	docker compose -f docker-compose.prod.yml up -d
 
 # Start with monitoring
 up-monitoring:
@@ -48,10 +67,25 @@ down:
 logs:
 	docker compose logs -f
 
+# Show logs for specific service
+logs-webapi:
+	docker compose logs -f webapi
+
+logs-postgres:
+	docker compose logs -f postgres
+
+logs-redis:
+	docker compose logs -f redis
+
 # Run tests
 test:
 	@echo "Running unit tests..."
 	dotnet test tests/AutoDocOps.Tests --logger "console;verbosity=normal"
+
+# Run tests with coverage
+test-coverage:
+	@echo "Running tests with coverage..."
+	dotnet test tests/AutoDocOps.Tests --collect:"XPlat Code Coverage" --logger "console;verbosity=normal"
 
 # Clean build artifacts
 clean:
@@ -59,15 +93,15 @@ clean:
 	dotnet clean
 	docker compose down --volumes --remove-orphans
 
+# Database migrations
+migrate-db:
+	@echo "Running database migrations..."
+	cd src/AutoDocOps.WebAPI && dotnet ef database update
+
 # Setup environment file
 setup-env:
-	@if [ ! -f .env ]; then \
-		cp .env.example .env; \
-		echo "Created .env file from .env.example"; \
-		echo "Please edit .env with your configuration"; \
-	else \
-		echo ".env file already exists"; \
-	fi
+	@echo "Setting up environment file..."
+	@if not exist .env (copy .env.example .env && echo Created .env file from .env.example && echo Please edit .env with your configuration) else (echo .env file already exists)
 
 # Development helpers
 dev-build:

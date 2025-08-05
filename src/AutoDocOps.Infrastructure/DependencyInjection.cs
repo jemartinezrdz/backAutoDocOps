@@ -136,7 +136,16 @@ public static class DependencyInjection
 
         // Add Health Checks
         services.AddHealthChecks()
-            .AddCheck<DocumentationServiceHealthCheck>("documentation_service");
+            .AddCheck<DocumentationServiceHealthCheck>("documentation_service")
+            .AddCheck<CacheHealthCheck>("cache_service") 
+            .AddCheck<LlmHealthCheck>("llm_service")
+            .AddNpgSql(
+                connectionString: configuration.GetConnectionString("DefaultConnection") ?? 
+                    "Host=localhost;Database=autodocops;Username=postgres;Password=postgres",
+                name: "database")
+            .AddRedis(
+                connectionString: configuration.GetConnectionString("Redis") ?? "localhost:6379",
+                name: "redis_cache");
 
         return services;
     }

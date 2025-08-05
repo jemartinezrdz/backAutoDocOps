@@ -88,8 +88,34 @@ public class TestController : ControllerBase
         { 
             status = "healthy",
             timestamp = DateTime.UtcNow,
-            message = "Test controller is working"
+            message = "Test controller is working",
+            environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Unknown",
+            version = "1.0.0"
         });
+    }
+
+    [HttpGet("system-info")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    public IActionResult SystemInfo()
+    {
+        var systemInfo = new
+        {
+            timestamp = DateTime.UtcNow,
+            environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Unknown",
+            machine_name = Environment.MachineName,
+            os_version = Environment.OSVersion.ToString(),
+            dotnet_version = Environment.Version.ToString(),
+            working_set = GC.GetTotalMemory(false),
+            services = new
+            {
+                cache_configured = _cacheService != null,
+                llm_configured = _llmClient != null,
+                billing_configured = _billingService != null,
+                mapper_configured = _mapper != null
+            }
+        };
+
+        return Ok(systemInfo);
     }
 
     [HttpPost("chat")]
@@ -99,7 +125,7 @@ public class TestController : ControllerBase
         {
             if (string.IsNullOrWhiteSpace(query))
             {
-                query = "Hola, ¿cómo estás?";
+                query = "Hola, ¿cómo estás? ¿Puedes ayudarme con documentación técnica?";
             }
 
             var response = await _llmClient.ChatAsync(query);
@@ -111,13 +137,19 @@ public class TestController : ControllerBase
                 query = query,
                 response = response,
                 timestamp = DateTime.UtcNow,
-                llm_type = "FakeLlmClient (testing mode)"
+                llm_type = _llmClient.GetType().Name,
+                status = "success"
             });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error testing chat for query: {Query}", query);
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, new { 
+                error = ex.Message, 
+                query = query,
+                timestamp = DateTime.UtcNow,
+                status = "error"
+            });
         }
     }
 

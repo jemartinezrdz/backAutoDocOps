@@ -158,7 +158,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 // Stripe webhook endpoint
-app.MapPost("/billing/stripe-webhook", async (HttpRequest request, IBillingService billingService) =>
+app.MapPost("/billing/stripe-webhook", async (HttpRequest request, IBillingService billingService, IConfiguration config) =>
 {
     try
     {
@@ -170,8 +170,9 @@ app.MapPost("/billing/stripe-webhook", async (HttpRequest request, IBillingServi
             return Results.BadRequest("Missing Stripe signature");
         }
 
-        var webhookSecret = Environment.GetEnvironmentVariable("STRIPE_WEBHOOK_SECRET") 
-            ?? throw new InvalidOperationException("STRIPE_WEBHOOK_SECRET environment variable is not set");
+        var webhookSecret = config["Stripe:WebhookSecret"] 
+            ?? Environment.GetEnvironmentVariable("STRIPE_WEBHOOK_SECRET") 
+            ?? throw new InvalidOperationException("STRIPE_WEBHOOK_SECRET is not configured");
 
         var stripeEvent = EventUtility.ConstructEvent(json, stripeSignature, webhookSecret);
         

@@ -4,28 +4,28 @@ services:
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
-    container_name: autodocops-postgres
+    container_name: autodocops-postgres-prod
     environment:
-      POSTGRES_DB: autodocops
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-autodocops}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - autodocops-network
+    restart: unless-stopped
 
   # Redis for caching and sessions
   redis:
     image: redis:7-alpine
-    container_name: autodocops-redis
+    container_name: autodocops-redis-prod
     ports:
       - "6379:6379"
     volumes:
@@ -37,17 +37,18 @@ services:
       retries: 5
     networks:
       - autodocops-network
+    restart: unless-stopped
 
   # IL Scanner gRPC Service
   ilscanner:
     build:
       context: .
       dockerfile: src/AutoDocOps.ILScanner/Dockerfile
-    container_name: autodocops-ilscanner
+    container_name: autodocops-ilscanner-prod
     ports:
       - "5000:5000"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5000
     depends_on:
       - postgres
@@ -58,27 +59,28 @@ services:
       retries: 3
     networks:
       - autodocops-network
+    restart: unless-stopped
 
   # Web API Service
   webapi:
     build:
       context: .
       dockerfile: src/AutoDocOps.WebAPI/Dockerfile
-    container_name: autodocops-webapi
+    container_name: autodocops-webapi-prod
     ports:
       - "8080:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Development}
+      - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__DefaultConnection=Host=postgres;Database=autodocops;Username=postgres;Password=postgres
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=${POSTGRES_DB:-autodocops};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}
       - ConnectionStrings__Redis=redis:6379
       - ILScanner__GrpcEndpoint=http://ilscanner:5000
-      - USE_FAKE_LLM=${USE_FAKE_LLM:-true}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_API_BASE=${OPENAI_API_BASE:-}
-      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
-      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-this_is_a_very_secure_jwt_secret_key_for_testing_purposes_32_chars_minimum}
+      - USE_FAKE_LLM=${USE_FAKE_LLM:-false}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_BASE=${OPENAI_API_BASE}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
     depends_on:
       postgres:
         condition: service_healthy
@@ -93,27 +95,12 @@ services:
       retries: 3
     networks:
       - autodocops-network
-
-  # pgAdmin for database management (development only)
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: autodocops-pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@autodocops.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "5050:80"
-    depends_on:
-      - postgres
-    networks:
-      - autodocops-network
-    profiles:
-      - dev
+    restart: unless-stopped
 
   # Prometheus for metrics
   prometheus:
     image: prom/prometheus:latest
-    container_name: autodocops-prometheus
+    container_name: autodocops-prometheus-prod
     ports:
       - "9090:9090"
     volumes:
@@ -128,17 +115,17 @@ services:
       - '--web.enable-lifecycle'
     networks:
       - autodocops-network
-    profiles:
-      - monitoring
+    restart: unless-stopped
 
   # Grafana for dashboards
   grafana:
     image: grafana/grafana:latest
-    container_name: autodocops-grafana
+    container_name: autodocops-grafana-prod
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
@@ -147,8 +134,7 @@ services:
       - prometheus
     networks:
       - autodocops-network
-    profiles:
-      - monitoring
+    restart: unless-stopped
 
 volumes:
   postgres_data:
@@ -159,4 +145,3 @@ volumes:
 networks:
   autodocops-network:
     driver: bridge
-

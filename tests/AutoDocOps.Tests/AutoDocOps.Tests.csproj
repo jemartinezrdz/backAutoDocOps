@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\AutoDocOps.Domain\AutoDocOps.Domain.csproj" />
     <ProjectReference Include="..\..\src\AutoDocOps.Application\AutoDocOps.Application.csproj" />
+    <ProjectReference Include="..\..\src\AutoDocOps.Infrastructure\AutoDocOps.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

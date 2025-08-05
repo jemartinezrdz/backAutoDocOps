@@ -1,5 +1,9 @@
+using AutoDocOps.Application.Passports.Queries.GetPassport;
+using AutoDocOps.Application.Passports.Queries.GetPassportsByProject;
+using AutoDocOps.Application.Passports.Commands.DeletePassport;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
 
 namespace AutoDocOps.WebAPI.Controllers;
 
@@ -31,10 +35,30 @@ public class PassportsController : ControllerBase
     {
         try
         {
-            // TODO: Implement GetPassportByIdQuery
             _logger.LogInformation("Retrieving passport {PassportId}", id);
             
-            // Placeholder implementation
+            var query = new GetPassportQuery(id);
+            var result = await _mediator.Send(query);
+            
+            var passportDto = new PassportDto(
+                result.Id,
+                result.ProjectId,
+                result.Version,
+                result.Format,
+                result.Status.ToString(),
+                result.GeneratedAt,
+                result.CompletedAt,
+                result.GeneratedBy,
+                result.SizeInBytes,
+                result.ErrorMessage
+            );
+            
+            return Ok(passportDto);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Passport {PassportId} not found", id);
+            
             return NotFound(new ProblemDetails
             {
                 Title = "Passport not found",
@@ -94,13 +118,27 @@ public class PassportsController : ControllerBase
                 });
             }
 
-            // TODO: Implement GetPassportsByProjectIdQuery
             _logger.LogInformation("Retrieving passports for project {ProjectId}", projectId);
             
-            // Placeholder implementation
+            var query = new GetPassportsByProjectQuery(projectId, page, pageSize);
+            var result = await _mediator.Send(query);
+            
+            var passportDtos = result.Passports.Select(p => new PassportDto(
+                p.Id,
+                p.ProjectId,
+                p.Version,
+                p.Format,
+                p.Status.ToString(),
+                p.GeneratedAt,
+                p.CompletedAt,
+                p.GeneratedBy,
+                p.SizeInBytes,
+                p.ErrorMessage
+            ));
+
             var response = new PassportListResponse(
-                new List<PassportDto>(),
-                0,
+                passportDtos,
+                result.TotalCount,
                 page,
                 pageSize
             );
@@ -121,6 +159,49 @@ public class PassportsController : ControllerBase
     }
 
     /// <summary>
+    /// Delete a passport
+    /// </summary>
+    /// <param name="id">Passport ID</param>
+    /// <returns>Deletion result</returns>
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult> DeletePassport(Guid id)
+    {
+        try
+        {
+            _logger.LogInformation("Deleting passport {PassportId}", id);
+            
+            var command = new DeletePassportCommand(id);
+            var result = await _mediator.Send(command);
+            
+            if (!result.Success)
+            {
+                return NotFound(new ProblemDetails
+                {
+                    Title = "Passport not found",
+                    Detail = result.Message,
+                    Status = StatusCodes.Status404NotFound
+                });
+            }
+
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting passport {PassportId}", id);
+            
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Title = "Internal server error",
+                Detail = "An error occurred while deleting the passport",
+                Status = StatusCodes.Status500InternalServerError
+            });
+        }
+    }
+
+    /// <summary>
     /// Download passport content
     /// </summary>
     /// <param name="id">Passport ID</param>
@@ -134,10 +215,28 @@ public class PassportsController : ControllerBase
     {
         try
         {
-            // TODO: Implement passport download logic
             _logger.LogInformation("Downloading passport {PassportId} in format {Format}", id, format);
             
-            // Placeholder implementation
+            var query = new GetPassportQuery(id);
+            var result = await _mediator.Send(query);
+            
+            var fileName = $"passport-{result.Version}.{result.Format}";
+            var contentType = result.Format.ToLower() switch
+            {
+                "pdf" => "application/pdf",
+                "html" => "text/html",
+                "markdown" => "text/markdown",
+                _ => "text/plain"
+            };
+
+            var content = System.Text.Encoding.UTF8.GetBytes(result.DocumentationContent);
+            
+            return File(content, contentType, fileName);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Passport {PassportId} not found", id);
+            
             return NotFound(new ProblemDetails
             {
                 Title = "Passport not found",

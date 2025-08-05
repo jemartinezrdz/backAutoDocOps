@@ -1,5 +1,6 @@
 using AutoDocOps.Application.Authentication.Models;
 using AutoDocOps.Application.Authentication.Services;
+using AutoDocOps.Application.Common.Interfaces;
 using AutoDocOps.Domain.Interfaces;
 using AutoDocOps.Infrastructure.Authentication;
 using AutoDocOps.Infrastructure.Data;
@@ -43,6 +44,31 @@ public static class DependencyInjection
                 options.EnableDetailedErrors();
             }
         });
+
+        // Add Redis Cache
+        var redisConnectionString = configuration.GetConnectionString("Redis") ?? "localhost:6379";
+        services.AddStackExchangeRedisCache(options =>
+        {
+            options.Configuration = redisConnectionString;
+            options.InstanceName = "AutoDocOps";
+        });
+
+        // Add cache service
+        services.AddScoped<ICacheService, RedisCacheService>();
+
+        // Add billing service
+        services.AddScoped<IBillingService, BillingService>();
+
+        // Add LLM client
+        var useFakeLlm = Environment.GetEnvironmentVariable("USE_FAKE_LLM")?.ToLower() == "true";
+        if (useFakeLlm)
+        {
+            services.AddScoped<ILlmClient, FakeLlmClient>();
+        }
+        else
+        {
+            services.AddScoped<ILlmClient, OpenAILlmClient>();
+        }
 
         // Add repositories
         services.AddScoped<IProjectRepository, ProjectRepository>();

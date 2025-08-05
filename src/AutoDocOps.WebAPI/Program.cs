@@ -1,8 +1,12 @@
 using AutoDocOps.Application.Projects.Commands.CreateProject;
+using AutoDocOps.Application.Common.Interfaces;
+using AutoDocOps.Application.Common.Profiles;
 using AutoDocOps.Infrastructure;
+using AutoDocOps.WebAPI.Models;
 using Asp.Versioning;
 using Asp.Versioning.ApiExplorer;
 using Microsoft.OpenApi.Models;
+using Stripe;
 using System.Reflection;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,6 +16,9 @@ builder.Services.AddControllers();
 
 // Add MediatR
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(CreateProjectCommand).Assembly));
+
+// Add AutoMapper
+builder.Services.AddAutoMapper(typeof(ProjectProfile));
 
 // Add Infrastructure (includes authentication)
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -53,7 +60,7 @@ builder.Services.AddSwaggerGen(c =>
     // Include XML comments
     var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
-    if (File.Exists(xmlPath))
+    if (System.IO.File.Exists(xmlPath))
     {
         c.IncludeXmlComments(xmlPath);
     }
@@ -95,6 +102,16 @@ builder.Services.AddCors(options =>
     });
 });
 
+// Add distributed sessions
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromHours(8);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+    options.Cookie.SameSite = SameSiteMode.None;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+});
+
 // Add health checks
 builder.Services.AddHealthChecks();
 
@@ -133,9 +150,79 @@ app.Use(async (context, next) =>
 
 app.UseCors();
 
+// Add session middleware
+app.UseSession();
+
 // Add authentication & authorization middleware
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Stripe webhook endpoint
+app.MapPost("/billing/stripe-webhook", async (HttpRequest request, IBillingService billingService) =>
+{
+    try
+    {
+        var json = await new StreamReader(request.Body).ReadToEndAsync();
+        var stripeSignature = request.Headers["Stripe-Signature"].FirstOrDefault();
+        
+        if (string.IsNullOrEmpty(stripeSignature))
+        {
+            return Results.BadRequest("Missing Stripe signature");
+        }
+
+        var webhookSecret = Environment.GetEnvironmentVariable("STRIPE_WEBHOOK_SECRET") 
+            ?? throw new InvalidOperationException("STRIPE_WEBHOOK_SECRET environment variable is not set");
+
+        var stripeEvent = EventUtility.ConstructEvent(json, stripeSignature, webhookSecret);
+        
+        await billingService.HandleAsync(stripeEvent);
+        
+        return Results.Ok();
+    }
+    catch (StripeException ex)
+    {
+        Console.WriteLine($"Stripe webhook error: {ex.Message}");
+        return Results.BadRequest($"Stripe error: {ex.Message}");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Webhook error: {ex.Message}");
+        return Results.StatusCode(500);
+    }
+}).WithTags("Billing").AllowAnonymous();
+
+// Chat streaming endpoint
+app.MapPost("/chat/stream", async (ChatRequest request, ILlmClient llmClient, HttpContext context) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Query))
+    {
+        return Results.BadRequest("Query is required");
+    }
+
+    context.Response.Headers.ContentType = "text/plain; charset=utf-8";
+    context.Response.Headers.CacheControl = "no-cache";
+    context.Response.Headers.Connection = "keep-alive";
+    
+    try
+    {
+        await foreach (var chunk in llmClient.StreamChatAsync(request.Query, context.RequestAborted))
+        {
+            await context.Response.WriteAsync(chunk, context.RequestAborted);
+            await context.Response.Body.FlushAsync(context.RequestAborted);
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        // Client disconnected, this is normal
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Chat streaming error: {ex.Message}");
+        await context.Response.WriteAsync($"Error: {ex.Message}", context.RequestAborted);
+    }
+    
+    return Results.Empty;
+}).WithTags("Chat").RequireAuthorization();
 
 app.MapControllers();
 

@@ -73,6 +73,12 @@ services:
       - ConnectionStrings__DefaultConnection=Host=postgres;Database=autodocops;Username=postgres;Password=postgres
       - ConnectionStrings__Redis=redis:6379
       - ILScanner__GrpcEndpoint=http://ilscanner:5000
+      - USE_FAKE_LLM=true
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-your_openai_api_key_here}
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-}
+      - STRIPE_API_KEY=${STRIPE_API_KEY:-sk_test_your_stripe_key_here}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-whsec_your_webhook_secret_here}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your_jwt_secret_key_here_minimum_32_characters_long}
     depends_on:
       postgres:
         condition: service_healthy

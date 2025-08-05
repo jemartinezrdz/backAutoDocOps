@@ -3,6 +3,7 @@ using AutoDocOps.Domain.Interfaces;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using System.Text.Json;
 
 namespace AutoDocOps.Infrastructure.Services;
@@ -11,13 +12,16 @@ public class DocumentationGenerationService : BackgroundService
 {
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ILogger<DocumentationGenerationService> _logger;
+    private readonly DocumentationGenerationOptions _options;
 
     public DocumentationGenerationService(
         IServiceScopeFactory serviceScopeFactory,
-        ILogger<DocumentationGenerationService> logger)
+        ILogger<DocumentationGenerationService> logger,
+        IOptions<DocumentationGenerationOptions> options)
     {
         _serviceScopeFactory = serviceScopeFactory;
         _logger = logger;
+        _options = options.Value;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -35,17 +39,17 @@ public class DocumentationGenerationService : BackgroundService
                 });
 
                 await ProcessPendingPassports(stoppingToken);
-                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); // Check every 30 seconds
+                await Task.Delay(TimeSpan.FromSeconds(_options.CheckIntervalSeconds), stoppingToken);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException ex)
             {
-                _logger.LogInformation("Documentation Generation Service is shutting down gracefully");
+                _logger.LogInformation(ex, "Documentation Generation Service is shutting down gracefully");
                 break;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Critical error in documentation generation service at {ErrorTime}", DateTime.UtcNow);
-                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken); // Wait before retrying
+                await Task.Delay(TimeSpan.FromMinutes(_options.RetryDelayMinutes), stoppingToken);
             }
         }
 
@@ -116,7 +120,10 @@ public class DocumentationGenerationService : BackgroundService
         }
 
         // Simulate documentation generation process
-        await SimulateDocumentationGeneration(passport, project, cancellationToken);
+        if (_options.EnableSimulation)
+        {
+            await SimulateDocumentationGeneration(passport, cancellationToken);
+        }
 
         // Mark as completed
         passport.Status = PassportStatus.Completed;
@@ -139,7 +146,7 @@ public class DocumentationGenerationService : BackgroundService
         _logger.LogInformation("Completed processing passport {PassportId}", passport.Id);
     }
 
-    private async Task SimulateDocumentationGeneration(Passport passport, Project project, CancellationToken cancellationToken)
+    private async Task SimulateDocumentationGeneration(Passport passport, CancellationToken cancellationToken)
     {
         // Simulate different phases of documentation generation
         var phases = new[]
@@ -151,7 +158,7 @@ public class DocumentationGenerationService : BackgroundService
             "Formatting output..."
         };
 
-        var phaseDelay = TimeSpan.FromSeconds(2); // Simulate processing time
+        var phaseDelay = TimeSpan.FromSeconds(_options.SimulationPhaseDelaySeconds);
 
         foreach (var phase in phases)
         {
@@ -163,7 +170,7 @@ public class DocumentationGenerationService : BackgroundService
         }
     }
 
-    private string GenerateDocumentationContent(Project project)
+    private static string GenerateDocumentationContent(Project project)
     {
         var content = $@"# {project.Name} Documentation
 

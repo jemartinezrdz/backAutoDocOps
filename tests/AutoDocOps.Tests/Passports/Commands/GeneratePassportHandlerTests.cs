@@ -85,7 +85,7 @@ public class GeneratePassportHandlerTests
     [InlineData("1.0.0", "")]
     [InlineData(null, "markdown")]
     [InlineData("1.0.0", null)]
-    public async Task Handle_InvalidInput_HandlesGracefully(string? version, string? format)
+    public async Task Handle_InvalidInput_UsesDefaultValues(string? version, string? format)
     {
         // Arrange
         var projectId = Guid.NewGuid();
@@ -99,8 +99,8 @@ public class GeneratePassportHandlerTests
         {
             Id = Guid.NewGuid(),
             ProjectId = projectId,
-            Version = version ?? "1.0.0",
-            Format = format ?? "markdown",
+            Version = string.IsNullOrEmpty(version) ? "1.0.0" : version,
+            Format = string.IsNullOrEmpty(format) ? "markdown" : format,
             Status = PassportStatus.Generating,
             GeneratedBy = generatedBy,
             GeneratedAt = DateTime.UtcNow
@@ -117,5 +117,13 @@ public class GeneratePassportHandlerTests
         // Assert
         Assert.NotNull(result);
         Assert.Equal(PassportStatus.Generating, result.Status);
+        
+        // Verify that defaults are used when input is invalid
+        Assert.True(!string.IsNullOrEmpty(result.Version));
+        Assert.True(!string.IsNullOrEmpty(result.Format));
+        
+        _mockPassportRepository.Verify(x => x.CreateAsync(It.Is<Passport>(p => 
+            !string.IsNullOrEmpty(p.Version) && !string.IsNullOrEmpty(p.Format)), 
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 }

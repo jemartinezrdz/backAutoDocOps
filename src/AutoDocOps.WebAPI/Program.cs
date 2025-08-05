@@ -103,10 +103,6 @@ builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 
-// TODO: Add authentication/authorization (JWT, Supabase)
-// TODO: Add chat & embeddings services
-// TODO: Add observability (OpenTelemetry)
-
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
@@ -140,8 +136,6 @@ app.UseCors();
 // Add authentication & authorization middleware
 app.UseAuthentication();
 app.UseAuthorization();
-// app.UseAuthentication();
-// app.UseAuthorization();
 
 app.MapControllers();
 

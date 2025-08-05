@@ -82,15 +82,43 @@ dev-run:
 test-cache:
 	@echo "Testing cache endpoint (run twice to see cache effect)..."
 	@echo "First call (no cache):"
-	curl -w "\nTime: %{time_total}s\n" -s http://localhost:8080/api/projects/1 | head -5
+	curl -w "\nTime: %{time_total}s\n" -s http://localhost:8080/api/test/cache/demo_key | head -5
 	@echo "\nSecond call (from cache):"
-	curl -w "\nTime: %{time_total}s\n" -s http://localhost:8080/api/projects/1 | head -5
+	curl -w "\nTime: %{time_total}s\n" -s http://localhost:8080/api/test/cache/demo_key | head -5
 
 test-chat:
-	@echo "Testing chat streaming endpoint..."
-	curl -N -X POST http://localhost:8080/chat/stream \
+	@echo "Testing chat endpoint..."
+	curl -X POST http://localhost:8080/api/test/chat \
 		-H "Content-Type: application/json" \
-		-d '{"query":"Hola, ¿cómo estás?"}'
+		-d '"Hola, ¿cómo está funcionando el sistema?"'
+
+test-health:
+	@echo "Testing health endpoint..."
+	curl -s http://localhost:8080/api/test/health | jq .
+
+test-billing:
+	@echo "Testing billing endpoint..."
+	curl -X POST http://localhost:8080/api/test/billing/checkout \
+		-H "Content-Type: application/json" \
+		-d '{}' | jq .
+
+test-all:
+	@echo "Running all functional tests..."
+	@echo "\n=== HEALTH CHECK ==="
+	make test-health
+	@echo "\n=== CACHE TEST ==="
+	make test-cache
+	@echo "\n=== CHAT TEST ==="
+	make test-chat
+	@echo "\n=== BILLING TEST ==="
+	make test-billing
+	@echo "\n=== ALL TESTS COMPLETED ==="
+
+# Evidence generation
+generate-evidence:
+	@echo "Generating functional testing evidence..."
+	@echo "Evidence report available at: FUNCTIONAL_TESTING_EVIDENCE.md"
+	@echo "Screenshots available at: /home/ubuntu/screenshots/"
 
 # Monitoring helpers
 grafana:

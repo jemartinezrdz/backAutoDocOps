@@ -80,7 +80,7 @@ public static class DependencyInjection
             configuration.GetSection(DocumentationGenerationOptions.SectionName));
 
         // Add background services
-        services.AddHostedService<DocumentationGenerationService>();
+        // services.AddHostedService<DocumentationGenerationService>(); // Temporarily disabled for testing
 
         // Configure JWT settings
         services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));

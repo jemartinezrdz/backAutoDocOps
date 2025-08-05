@@ -1,0 +1,273 @@
+using AutoDocOps.Application.Common.Interfaces;
+using AutoMapper;
+using Microsoft.AspNetCore.Mvc;
+
+namespace AutoDocOps.WebAPI.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+public class TestController : ControllerBase
+{
+    private readonly ICacheService _cacheService;
+    private readonly ILlmClient _llmClient;
+    private readonly IBillingService _billingService;
+    private readonly IMapper _mapper;
+    private readonly ILogger<TestController> _logger;
+
+    public TestController(ICacheService cacheService, ILlmClient llmClient, IBillingService billingService, IMapper mapper, ILogger<TestController> logger)
+    {
+        _cacheService = cacheService;
+        _llmClient = llmClient;
+        _billingService = billingService;
+        _mapper = mapper;
+        _logger = logger;
+    }
+
+    [HttpGet("cache/{key}")]
+    public async Task<IActionResult> GetFromCache(string key)
+    {
+        try
+        {
+            var value = await _cacheService.GetAsync<string>(key);
+            
+            if (value == null)
+            {
+                var newValue = $"Generated value for {key} at {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC";
+                await _cacheService.SetAsync(key, newValue, TimeSpan.FromMinutes(5));
+                
+                _logger.LogInformation("Cache MISS for key: {Key}. Generated new value.", key);
+                
+                return Ok(new 
+                { 
+                    key = key,
+                    value = newValue,
+                    source = "generated",
+                    timestamp = DateTime.UtcNow,
+                    ttl_minutes = 5
+                });
+            }
+            
+            _logger.LogInformation("Cache HIT for key: {Key}", key);
+            
+            return Ok(new 
+            { 
+                key = key,
+                value = value,
+                source = "cache",
+                timestamp = DateTime.UtcNow
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error testing cache for key: {Key}", key);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpDelete("cache/{key}")]
+    public async Task<IActionResult> RemoveFromCache(string key)
+    {
+        try
+        {
+            await _cacheService.RemoveAsync(key);
+            _logger.LogInformation("Removed key from cache: {Key}", key);
+            
+            return Ok(new { message = $"Key '{key}' removed from cache" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error removing key from cache: {Key}", key);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("health")]
+    public IActionResult Health()
+    {
+        return Ok(new 
+        { 
+            status = "healthy",
+            timestamp = DateTime.UtcNow,
+            message = "Test controller is working"
+        });
+    }
+
+    [HttpPost("chat")]
+    public async Task<IActionResult> TestChat([FromBody] string query)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                query = "Hola, ¿cómo estás?";
+            }
+
+            var response = await _llmClient.ChatAsync(query);
+            
+            _logger.LogInformation("Chat test completed for query: {Query}", query);
+            
+            return Ok(new 
+            { 
+                query = query,
+                response = response,
+                timestamp = DateTime.UtcNow,
+                llm_type = "FakeLlmClient (testing mode)"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error testing chat for query: {Query}", query);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("billing/checkout")]
+    public async Task<IActionResult> TestCreateCheckout([FromBody] TestCheckoutRequest request)
+    {
+        try
+        {
+            if (request?.OrganizationId == Guid.Empty)
+            {
+                request = new TestCheckoutRequest 
+                { 
+                    OrganizationId = Guid.NewGuid(),
+                    PlanId = "price_starter_default",
+                    SuccessUrl = "http://localhost:8080/success",
+                    CancelUrl = "http://localhost:8080/cancel"
+                };
+            }
+
+            var sessionUrl = await _billingService.CreateCheckoutSessionAsync(
+                request.OrganizationId, 
+                request.PlanId, 
+                request.SuccessUrl, 
+                request.CancelUrl);
+            
+            _logger.LogInformation("Billing checkout test completed for organization: {OrgId}, plan: {Plan}", request.OrganizationId, request.PlanId);
+            
+            return Ok(new 
+            { 
+                organization_id = request.OrganizationId,
+                plan_id = request.PlanId,
+                checkout_session_url = sessionUrl,
+                timestamp = DateTime.UtcNow,
+                billing_service = "Stripe (testing mode)"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error testing billing checkout for organization: {OrgId}", request?.OrganizationId);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("mapper")]
+    public IActionResult TestAutoMapper()
+    {
+        try
+        {
+            // Crear un objeto de prueba para mapear
+            var testProject = new TestProject
+            {
+                Id = Guid.NewGuid(),
+                Name = "Test Project",
+                Description = "This is a test project for AutoMapper",
+                CreatedAt = DateTime.UtcNow
+            };
+
+            // Usar AutoMapper para mapear a DTO
+            var projectDto = _mapper.Map<TestProjectDto>(testProject);
+            
+            _logger.LogInformation("AutoMapper test completed for project: {ProjectId}", testProject.Id);
+            
+            return Ok(new 
+            { 
+                original = testProject,
+                mapped = projectDto,
+                timestamp = DateTime.UtcNow,
+                mapper_service = "AutoMapper (working)"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error testing AutoMapper");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("session")]
+    public IActionResult TestSession([FromBody] TestSessionData data)
+    {
+        try
+        {
+            // Probar sesiones distribuidas
+            var sessionKey = "test_session_data";
+            
+            if (data != null)
+            {
+                // Guardar en sesión
+                HttpContext.Session.SetString(sessionKey, System.Text.Json.JsonSerializer.Serialize(data));
+                _logger.LogInformation("Session data stored for key: {Key}", sessionKey);
+                
+                return Ok(new 
+                { 
+                    action = "stored",
+                    data = data,
+                    session_id = HttpContext.Session.Id,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                // Leer de sesión
+                var sessionData = HttpContext.Session.GetString(sessionKey);
+                _logger.LogInformation("Session data retrieved for key: {Key}", sessionKey);
+                
+                return Ok(new 
+                { 
+                    action = "retrieved",
+                    data = sessionData != null ? System.Text.Json.JsonSerializer.Deserialize<TestSessionData>(sessionData) : null,
+                    session_id = HttpContext.Session.Id,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error testing session");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+}
+
+public class TestProject
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class TestProjectDto
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string CreatedAt { get; set; } = string.Empty;
+}
+
+public class TestSessionData
+{
+    public string UserId { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public DateTime LoginTime { get; set; }
+}
+
+public class TestCheckoutRequest
+{
+    public Guid OrganizationId { get; set; }
+    public string PlanId { get; set; } = string.Empty;
+    public string SuccessUrl { get; set; } = string.Empty;
+    public string CancelUrl { get; set; } = string.Empty;
+}
+

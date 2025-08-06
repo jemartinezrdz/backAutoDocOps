@@ -1,6 +1,5 @@
-namespace AutoDocOps.Tests.Common;
+namespace AutoDocOps.WebAPI.Models;
 
-// Test classes for AutoMapper testing
 public class TestProject
 {
     public Guid Id { get; set; }

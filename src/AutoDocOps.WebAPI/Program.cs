@@ -171,7 +171,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 // Stripe webhook endpoint
-app.MapPost("/billing/stripe-webhook", async (HttpRequest request, IBillingService billingService, IConfiguration config) =>
+app.MapPost("/billing/stripe-webhook", async (HttpRequest request, IBillingService billingService, IConfiguration config, ILogger<Program> logger) =>
 {
     try
     {
@@ -195,18 +195,18 @@ app.MapPost("/billing/stripe-webhook", async (HttpRequest request, IBillingServi
     }
     catch (StripeException ex)
     {
-        Console.WriteLine($"Stripe webhook error: {ex.Message}");
+        logger.LogError(ex, "Stripe webhook error: {Message}", ex.Message);
         return Results.BadRequest($"Stripe error: {ex.Message}");
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Webhook error: {ex.Message}");
+        logger.LogError(ex, "Webhook error: {Message}", ex.Message);
         return Results.StatusCode(500);
     }
 }).WithTags("Billing").AllowAnonymous();
 
 // Chat streaming endpoint
-app.MapPost("/chat/stream", async (ChatRequest request, ILlmClient llmClient, HttpContext context) =>
+app.MapPost("/chat/stream", async (ChatRequest request, ILlmClient llmClient, HttpContext context, ILogger<Program> logger) =>
 {
     if (string.IsNullOrWhiteSpace(request.Query))
     {
@@ -231,7 +231,7 @@ app.MapPost("/chat/stream", async (ChatRequest request, ILlmClient llmClient, Ht
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Chat streaming error: {ex.Message}");
+        logger.LogError(ex, "Chat streaming error: {Message}", ex.Message);
         await context.Response.WriteAsync($"Error: {ex.Message}", context.RequestAborted);
     }
     
@@ -261,9 +261,8 @@ app.MapGet("/", () => new
 // Add health check endpoints
 app.MapHealthChecks("/health");
 
-Console.WriteLine("AutoDocOps API starting...");
-Console.WriteLine($"Environment: {app.Environment.EnvironmentName}");
-Console.WriteLine("Swagger UI available at: /swagger");
-Console.WriteLine("Health checks available at: /health");
+var logger = app.Services.GetRequiredService<ILogger<Program>>();
+logger.LogInformation("AutoDocOps API starting in {Environment} environment", app.Environment.EnvironmentName);
+logger.LogInformation("Available endpoints - Swagger UI: /swagger, Health checks: /health");
 
 await app.RunAsync();

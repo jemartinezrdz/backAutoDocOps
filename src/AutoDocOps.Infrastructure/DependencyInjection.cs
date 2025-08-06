@@ -85,8 +85,12 @@ public static class DependencyInjection
         services.Configure<DocumentationGenerationOptions>(
             configuration.GetSection(DocumentationGenerationOptions.SectionName));
 
-        // Add background services
-        // services.AddHostedService<DocumentationGenerationService>(); // Temporarily disabled for testing
+        // Add background services (conditionally based on environment/configuration)
+        var enableDocumentationGeneration = configuration.GetValue<bool>("Features:EnableDocumentationGeneration", false);
+        if (enableDocumentationGeneration)
+        {
+            services.AddHostedService<DocumentationGenerationService>();
+        }
 
         // Configure JWT settings
         services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));

@@ -20,15 +20,14 @@ public class GetProjectHandler : IRequestHandler<GetProjectQuery, GetProjectResp
     {
         var cacheKey = $"project:{request.Id}";
         
-        // Try to get from cache first
-        if (_cacheService.TryGet(cacheKey, out GetProjectResponse? cachedResponse) && cachedResponse != null)
+        // Try to get from cache first using async method
+        var cachedResponse = await _cacheService.GetAsync<GetProjectResponse>(cacheKey, cancellationToken);
+        if (cachedResponse != null)
         {
             return cachedResponse;
         }
-
-        var project = await _projectRepository.GetByIdAsync(request.Id, cancellationToken);
         
-        if (project == null)
+        var project = await _projectRepository.GetByIdAsync(request.Id, cancellationToken);        if (project == null)
         {
             throw new ArgumentException($"Project with ID {request.Id} not found.");
         }

@@ -97,27 +97,9 @@ public class BillingService : IBillingService
         }
     }
 
-    public async Task<bool> CancelSubscriptionAsync(Guid organizationId, CancellationToken cancellationToken = default)
+    public Task<bool> CancelSubscriptionAsync(Guid organizationId, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            // This would typically involve looking up the subscription in the database
-            // and then canceling it via Stripe API
-            _logger.LogInformation("Canceling subscription for organization {OrganizationId}", organizationId);
-            
-            // TODO: Implement actual subscription cancellation logic
-            // 1. Look up subscription in database
-            // 2. Cancel via Stripe API
-            // 3. Update database
-            
-            await Task.CompletedTask;
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error canceling subscription for organization {OrganizationId}", organizationId);
-            return false;
-        }
+        throw new NotImplementedException("CancelSubscriptionAsync is not yet implemented. This method requires implementation of: 1. Database subscription lookup, 2. Stripe API cancellation, 3. Database status update.");
     }
 
     private async Task HandleCheckoutSessionCompleted(Event stripeEvent, CancellationToken cancellationToken)

@@ -5,6 +5,9 @@
 
 set -e
 
+# Configuración por defecto
+API_BASE_URL=${API_BASE_URL:-"http://localhost:8080"}
+
 echo "🚀 AutoDocOps Development Setup"
 echo "================================"
 
@@ -93,7 +96,7 @@ else
 fi
 
 # Verificar WebAPI
-if curl -f http://localhost:8080/health/live > /dev/null 2>&1; then
+if curl -f "${API_BASE_URL}/health/live" > /dev/null 2>&1; then
     echo "✅ WebAPI está listo"
 else
     echo "❌ WebAPI no está listo"
@@ -105,8 +108,8 @@ echo "🎉 Setup completado!"
 echo "==================="
 echo ""
 echo "🌐 Servicios disponibles:"
-echo "  • API: http://localhost:8080"
-echo "  • Swagger: http://localhost:8080/swagger"
+echo "  • API: ${API_BASE_URL}"
+echo "  • Swagger: ${API_BASE_URL}/swagger"
 echo "  • pgAdmin: http://localhost:5050 (admin@autodocops.com / admin)"
 echo ""
 echo "🔧 Comandos útiles:"
@@ -115,9 +118,9 @@ echo "  • Parar servicios: docker compose down"
 echo "  • Reiniciar: docker compose restart"
 echo ""
 echo "🧪 Endpoints de prueba:"
-echo "  • Health: curl http://localhost:8080/api/test/health"
-echo "  • Cache: curl http://localhost:8080/api/test/cache/demo"
-echo "  • System Info: curl http://localhost:8080/api/test/system-info"
+echo "  • Health: curl ${API_BASE_URL}/api/test/health"
+echo "  • Cache: curl ${API_BASE_URL}/api/test/cache/demo"
+echo "  • System Info: curl ${API_BASE_URL}/api/test/system-info"
 echo ""
 echo "📝 Para ejecutar tests funcionales:"
 echo "  make test-all"

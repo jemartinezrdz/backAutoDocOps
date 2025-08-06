@@ -8,6 +8,7 @@ using AutoDocOps.Infrastructure.HealthChecks;
 using AutoDocOps.Infrastructure.Repositories;
 using AutoDocOps.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using StackExchange.Redis;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -52,6 +53,10 @@ public static class DependencyInjection
             options.Configuration = redisConnectionString;
             options.InstanceName = "AutoDocOps";
         });
+
+        // Add Redis ConnectionMultiplexer for pattern-based operations
+        services.AddSingleton<IConnectionMultiplexer>(provider =>
+            ConnectionMultiplexer.Connect(redisConnectionString));
 
         // Add cache service
         services.AddScoped<ICacheService, RedisCacheService>();

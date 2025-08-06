@@ -8,6 +8,11 @@ namespace AutoDocOps.Tests.Projects.Commands;
 
 public class CreateProjectHandlerTests
 {
+    private const string TestProjectName = "Test Project";
+    private const string TestProjectDescription = "Test Description";  
+    private const string TestRepositoryUrl = "https://github.com/test/repo";
+    private const string TestBranch = "main";
+    
     private readonly Mock<IProjectRepository> _mockProjectRepository;
     private readonly CreateProjectHandler _handler;
 
@@ -22,10 +27,10 @@ public class CreateProjectHandlerTests
     {
         // Arrange
         var command = new CreateProjectCommand(
-            "Test Project",
-            "Test Description",
-            "https://github.com/test/repo",
-            "main",
+            TestProjectName,
+            TestProjectDescription,
+            TestRepositoryUrl,
+            TestBranch,
             Guid.NewGuid(),
             Guid.NewGuid()
         );
@@ -71,9 +76,9 @@ public class CreateProjectHandlerTests
     {
         // Arrange
         var command = new CreateProjectCommand(
-            "Test Project",
-            "Test Description",
-            "https://github.com/test/repo",
+            TestProjectName,
+            TestProjectDescription,
+            TestRepositoryUrl,
             "develop",
             Guid.NewGuid(),
             Guid.NewGuid()

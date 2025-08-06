@@ -19,6 +19,10 @@ public class OpenAILlmClient : ILlmClient
         
         var apiKey = configuration["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY")
             ?? throw new InvalidOperationException("OpenAI API key is not configured");
+
+        // Basic API key validation: non-empty and plausible format (OpenAI keys typically start with "sk-")
+        if (string.IsNullOrWhiteSpace(apiKey) || apiKey.Length < 20 || !apiKey.StartsWith("sk-"))
+            throw new InvalidOperationException("OpenAI API key is invalid or malformed");
             
         var endpoint = configuration["OpenAI:Endpoint"] ?? Environment.GetEnvironmentVariable("OPENAI_API_BASE");
         var model = configuration["OpenAI:Model"] ?? "gpt-3.5-turbo";

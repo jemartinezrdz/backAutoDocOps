@@ -2,6 +2,7 @@ using AutoDocOps.Application.Common.Interfaces;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using StackExchange.Redis;
 
 namespace AutoDocOps.Infrastructure.Services;
 
@@ -9,11 +10,13 @@ public class RedisCacheService : ICacheService
 {
     private readonly IDistributedCache _distributedCache;
     private readonly ILogger<RedisCacheService> _logger;
+    private readonly IConnectionMultiplexer? _connectionMultiplexer;
 
-    public RedisCacheService(IDistributedCache distributedCache, ILogger<RedisCacheService> logger)
+    public RedisCacheService(IDistributedCache distributedCache, ILogger<RedisCacheService> logger, IConnectionMultiplexer? connectionMultiplexer = null)
     {
         _distributedCache = distributedCache;
         _logger = logger;
+        _connectionMultiplexer = connectionMultiplexer;
     }
 
     public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
@@ -72,10 +75,33 @@ public class RedisCacheService : ICacheService
 
     public async Task RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default)
     {
-        // Note: This is a simplified implementation. For production, you might want to use Redis SCAN command
-        // or implement a more sophisticated pattern matching approach
-        _logger.LogWarning("RemoveByPatternAsync is not fully implemented for Redis. Pattern: {Pattern}", pattern);
-        await Task.CompletedTask;
+        try
+        {
+            if (_connectionMultiplexer == null)
+            {
+                _logger.LogWarning("RemoveByPatternAsync requires IConnectionMultiplexer to be injected. Falling back to no-op. Pattern: {Pattern}", pattern);
+                return;
+            }
+
+            var database = _connectionMultiplexer.GetDatabase();
+            var server = _connectionMultiplexer.GetServer(_connectionMultiplexer.GetEndPoints()[0]);
+            
+            var keys = server.Keys(pattern: pattern).ToArray();
+            if (keys.Length > 0)
+            {
+                await database.KeyDeleteAsync(keys);
+                _logger.LogInformation("Removed {Count} keys matching pattern: {Pattern}", keys.Length, pattern);
+            }
+            else
+            {
+                _logger.LogDebug("No keys found matching pattern: {Pattern}", pattern);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error removing keys by pattern: {Pattern}", pattern);
+            throw;
+        }
     }
 
     public bool TryGet<T>(string key, out T? value) where T : class

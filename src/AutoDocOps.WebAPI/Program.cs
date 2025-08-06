@@ -172,7 +172,7 @@ app.MapPost("/billing/stripe-webhook", async (HttpRequest request, IBillingServi
 
         var webhookSecret = config["Stripe:WebhookSecret"] 
             ?? Environment.GetEnvironmentVariable("STRIPE_WEBHOOK_SECRET") 
-            ?? throw new InvalidOperationException("STRIPE_WEBHOOK_SECRET is not configured");
+            ?? throw new InvalidOperationException("STRIPE_WEBHOOK_SECRET environment variable is not configured. Please set it in your environment or configuration.");
 
         var stripeEvent = EventUtility.ConstructEvent(json, stripeSignature, webhookSecret);
         

@@ -13,11 +13,16 @@ public class TestController : ControllerBase
     private readonly IBillingService _billingService;
     private readonly IMapper _mapper;
     private readonly ILogger<TestController> _logger;
+    private readonly IConfiguration _configuration;
 
-    public TestController(ICacheService cacheService, ILlmClient llmClient, IBillingService billingService, IMapper mapper, ILogger<TestController> logger)
+    public TestController(ICacheService cacheService, ILlmClient llmClient, IBillingService billingService, IMapper mapper, ILogger<TestController> logger, IConfiguration configuration)
     {
         _cacheService = cacheService;
         _llmClient = llmClient;
+        _billingService = billingService;
+        _mapper = mapper;
+        _logger = logger;
+        _configuration = configuration;
         _billingService = billingService;
         _mapper = mapper;
         _logger = logger;
@@ -164,8 +169,8 @@ public class TestController : ControllerBase
                 { 
                     OrganizationId = Guid.NewGuid(),
                     PlanId = "price_starter_default",
-                    SuccessUrl = "http://localhost:8080/success",
-                    CancelUrl = "http://localhost:8080/cancel"
+                    SuccessUrl = _configuration["Billing:DefaultSuccessUrl"] ?? "http://localhost:8080/success",
+                    CancelUrl = _configuration["Billing:DefaultCancelUrl"] ?? "http://localhost:8080/cancel"
                 };
             }
 

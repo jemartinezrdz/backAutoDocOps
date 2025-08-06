@@ -12,14 +12,14 @@ public class BillingService : IBillingService
 {
     private readonly ILogger<BillingService> _logger;
     private readonly IConfiguration _configuration;
+    private readonly string _stripeApiKey;
 
     public BillingService(ILogger<BillingService> logger, IConfiguration configuration)
     {
         _logger = logger;
         _configuration = configuration;
-        
-        // Configure Stripe API key
-        StripeConfiguration.ApiKey = _configuration["Stripe:SecretKey"];
+        _stripeApiKey = _configuration["Stripe:SecretKey"] 
+            ?? throw new InvalidOperationException("Stripe SecretKey is not configured");
     }
 
     public async Task HandleAsync(Event stripeEvent, CancellationToken cancellationToken = default)
@@ -82,7 +82,7 @@ public class BillingService : IBillingService
                 }
             };
 
-            var service = new SessionService();
+            var service = new SessionService(new StripeClient(_stripeApiKey));
             var session = await service.CreateAsync(options, cancellationToken: cancellationToken);
             
             _logger.LogInformation("Created checkout session {SessionId} for organization {OrganizationId}", 

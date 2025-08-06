@@ -1,6 +1,7 @@
 using AutoDocOps.Application.Authentication.Models;
 using AutoDocOps.Application.Authentication.Services;
 using AutoDocOps.Application.Common.Interfaces;
+using AutoDocOps.Application.Common.Models;
 using AutoDocOps.Domain.Interfaces;
 using AutoDocOps.Infrastructure.Authentication;
 using AutoDocOps.Infrastructure.Data;
@@ -27,7 +28,7 @@ public static class DependencyInjection
         services.AddDbContext<AutoDocOpsDbContext>(options =>
         {
             var connectionString = configuration.GetConnectionString("DefaultConnection") 
-                ?? "Host=localhost;Database=autodocops;Username=postgres;Password=postgres";
+                ?? throw new InvalidOperationException("DefaultConnection is required but not configured. Please set the ConnectionStrings:DefaultConnection configuration value.");
             
             options.UseNpgsql(connectionString, npgsqlOptions =>
             {
@@ -146,10 +147,9 @@ public static class DependencyInjection
             .AddCheck<LlmHealthCheck>("llm_service")
             .AddNpgSql(
                 connectionString: configuration.GetConnectionString("DefaultConnection") ?? 
-                    "Host=localhost;Database=autodocops;Username=postgres;Password=postgres",
+                    throw new InvalidOperationException("DefaultConnection is required for health checks but not configured."),
                 name: "database")
-            .AddRedis(
-                connectionString: configuration.GetConnectionString("Redis") ?? "localhost:6379",
+            .AddRedis(configuration.GetConnectionString("Redis") ?? "localhost:6379",
                 name: "redis_cache");
 
         return services;

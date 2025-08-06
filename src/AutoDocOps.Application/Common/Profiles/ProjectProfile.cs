@@ -19,27 +19,5 @@ public class ProjectProfile : Profile
             .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => src.CreatedAt))
             .ForMember(dest => dest.UpdatedAt, opt => opt.MapFrom(src => src.UpdatedAt))
             .ForMember(dest => dest.IsActive, opt => opt.MapFrom(src => src.IsActive));
-
-        // Mapping para testing
-        CreateMap<TestProject, TestProjectDto>()
-            .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => src.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss UTC")));
     }
 }
-
-// Clases de prueba para AutoMapper
-public class TestProject
-{
-    public Guid Id { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public string Description { get; set; } = string.Empty;
-    public DateTime CreatedAt { get; set; }
-}
-
-public class TestProjectDto
-{
-    public Guid Id { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public string Description { get; set; } = string.Empty;
-    public string CreatedAt { get; set; } = string.Empty;
-}
-

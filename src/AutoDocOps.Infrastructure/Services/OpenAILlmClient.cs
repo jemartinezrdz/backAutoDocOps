@@ -10,6 +10,7 @@ namespace AutoDocOps.Infrastructure.Services;
 
 public class OpenAILlmClient : ILlmClient
 {
+    private const int MinApiKeyLength = 20;
     private readonly ChatClient _chatClient;
     private readonly ILogger<OpenAILlmClient> _logger;
 
@@ -21,7 +22,7 @@ public class OpenAILlmClient : ILlmClient
             ?? throw new InvalidOperationException("OpenAI API key is not configured");
 
         // Basic API key validation: non-empty and plausible format (OpenAI keys typically start with "sk-")
-        if (string.IsNullOrWhiteSpace(apiKey) || apiKey.Length < 20 || !apiKey.StartsWith("sk-"))
+        if (string.IsNullOrWhiteSpace(apiKey) || apiKey.Length < MinApiKeyLength || !apiKey.StartsWith("sk-"))
             throw new InvalidOperationException("OpenAI API key is invalid or malformed");
             
         var endpoint = configuration["OpenAI:Endpoint"] ?? Environment.GetEnvironmentVariable("OPENAI_API_BASE");

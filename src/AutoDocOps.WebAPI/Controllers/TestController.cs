@@ -23,9 +23,6 @@ public class TestController : ControllerBase
         _mapper = mapper;
         _logger = logger;
         _configuration = configuration;
-        _billingService = billingService;
-        _mapper = mapper;
-        _logger = logger;
     }
 
     [HttpGet("cache/{key}")]
@@ -175,7 +172,7 @@ public class TestController : ControllerBase
             }
 
             var sessionUrl = await _billingService.CreateCheckoutSessionAsync(
-                request.OrganizationId, 
+                request!.OrganizationId, 
                 request.PlanId, 
                 request.SuccessUrl, 
                 request.CancelUrl);

@@ -1,6 +1,8 @@
 using AutoDocOps.Application.Projects.Commands.CreateProject;
 using AutoDocOps.Application.Common.Interfaces;
 using AutoDocOps.Application.Common.Profiles;
+using AutoDocOps.Application.Authentication.Models;
+using AutoDocOps.Application.Common.Models;
 using AutoDocOps.Infrastructure;
 using AutoDocOps.WebAPI.Models;
 using Asp.Versioning;
@@ -22,6 +24,17 @@ builder.Services.AddAutoMapper(typeof(ProjectProfile));
 
 // Add Infrastructure (includes authentication)
 builder.Services.AddInfrastructure(builder.Configuration);
+
+// Strict validation of critical configuration (fail-fast)
+builder.Services.AddOptions<JwtSettings>()
+    .BindConfiguration(JwtSettings.SectionName)
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+builder.Services.AddOptions<DbSettings>()
+    .BindConfiguration(DbSettings.SectionName)
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
 
 // Add API versioning
 builder.Services.AddApiVersioning(opt =>

@@ -23,6 +23,7 @@ public class MissingEnvTests
             .Build();
 
         var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
         services.AddOptions<JwtSettings>()
             .BindConfiguration(JwtSettings.SectionName)
             .ValidateDataAnnotations()
@@ -51,6 +52,7 @@ public class MissingEnvTests
             .Build();
 
         var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
         services.AddOptions<JwtSettings>()
             .BindConfiguration(JwtSettings.SectionName)
             .ValidateDataAnnotations()
@@ -78,6 +80,7 @@ public class MissingEnvTests
             .Build();
 
         var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
         services.AddOptions<DbSettings>()
             .BindConfiguration(DbSettings.SectionName)
             .ValidateDataAnnotations()
@@ -108,6 +111,7 @@ public class MissingEnvTests
             .Build();
 
         var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
         services.AddOptions<JwtSettings>()
             .BindConfiguration(JwtSettings.SectionName)
             .ValidateDataAnnotations()

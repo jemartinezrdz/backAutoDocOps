@@ -134,13 +134,16 @@ builder.Services.AddHealthChecks();
 // Add rate limiting for webhooks
 builder.Services.AddRateLimiter(options =>
 {
-    options.AddFixedWindowLimiter("stripe-webhook", policy =>
-    {
-        policy.PermitLimit = 20; // 20 requests per minute
-        policy.Window = TimeSpan.FromMinutes(1);
-        policy.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        policy.QueueLimit = 0; // No queueing
-    });
+    options.AddPolicy("stripe", ctx =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 5
+            }));
 });
 
 // Configure logging
@@ -190,7 +193,7 @@ app.UseAuthorization();
 
 // Stripe webhook endpoint with security enhancements
 app.MapPost("/billing/stripe-webhook", HandleStripeWebhookAsync)
-    .RequireRateLimiting("stripe-webhook")
+    .RequireRateLimiting("stripe")
     .Accepts<string>("application/json")
     .WithName("StripeWebhook")
     .WithTags("Billing")

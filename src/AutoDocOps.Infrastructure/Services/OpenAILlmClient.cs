@@ -1,4 +1,5 @@
 using AutoDocOps.Application.Common.Interfaces;
+using AutoDocOps.Infrastructure.Validators;
 using Azure.AI.OpenAI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -6,17 +7,11 @@ using OpenAI.Chat;
 using System.ClientModel;
 using System.Runtime.CompilerServices;
 using System.Security;
-using System.Text.RegularExpressions;
 
 namespace AutoDocOps.Infrastructure.Services;
 
 public class OpenAILlmClient : ILlmClient
 {
-    private const int MinApiKeyLength = 20;
-    private static readonly string[] ValidPrefixes = { "sk-", "sk-proj-", "sk-org-" };
-    private static readonly Regex ApiKeyFormat = 
-        new(@"^(sk|sk-proj|sk-org)-[a-zA-Z0-9]{16,}$", RegexOptions.Compiled);
-    
     private readonly ChatClient _chatClient;
     private readonly ILogger<OpenAILlmClient> _logger;
 
@@ -27,14 +22,12 @@ public class OpenAILlmClient : ILlmClient
         var apiKey = configuration["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY")
             ?? throw new InvalidOperationException("OpenAI API key is not configured");
         
-        // Comprehensive API key validation with proper AND logic
-        if (string.IsNullOrWhiteSpace(apiKey) ||
-            apiKey.Length < MinApiKeyLength ||
-            !ValidPrefixes.Any(apiKey.StartsWith) ||
-            !ApiKeyFormat.IsMatch(apiKey))
+        // Use the dedicated validator for comprehensive API key validation
+        var validationResult = ApiKeyValidator.ValidateWithDetails(apiKey);
+        if (!validationResult.IsValid)
         {
-            _logger.LogWarning("Invalid OpenAI API key format");
-            throw new SecurityException("OpenAI API key is invalid or malformed.");
+            _logger.LogWarning("API key validation failed: {Reason}", validationResult.Message);
+            throw new SecurityException($"OpenAI API key is invalid: {validationResult.Message}");
         }
         
         var endpoint = configuration["OpenAI:Endpoint"] ?? Environment.GetEnvironmentVariable("OPENAI_API_BASE");

@@ -42,7 +42,7 @@ public class OpenAILlmClientSecurityTests
 
         // Act & Assert
         var exception = Assert.Throws<SecurityException>(() => new OpenAILlmClient(_mockConfiguration.Object, _mockLogger.Object));
-        Assert.Contains("OpenAI API key is invalid or malformed", exception.Message);
+        Assert.Contains("API key is null or empty", exception.Message);
     }
 
     [Theory]
@@ -57,7 +57,7 @@ public class OpenAILlmClientSecurityTests
 
         // Act & Assert
         var exception = Assert.Throws<SecurityException>(() => new OpenAILlmClient(_mockConfiguration.Object, _mockLogger.Object));
-        Assert.Contains("OpenAI API key is invalid or malformed", exception.Message);
+        Assert.Contains("too short", exception.Message);
     }
 
     [Theory]
@@ -72,7 +72,7 @@ public class OpenAILlmClientSecurityTests
 
         // Act & Assert
         var exception = Assert.Throws<SecurityException>(() => new OpenAILlmClient(_mockConfiguration.Object, _mockLogger.Object));
-        Assert.Contains("OpenAI API key is invalid or malformed", exception.Message);
+        Assert.True(exception.Message.Contains("invalid characters") || exception.Message.Contains("too short"));
     }
 
     [Theory]

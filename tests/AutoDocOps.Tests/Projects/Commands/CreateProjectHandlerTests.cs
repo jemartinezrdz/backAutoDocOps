@@ -79,7 +79,7 @@ public class CreateProjectHandlerTests
             TestProjectName,
             TestProjectDescription,
             TestRepositoryUrl,
-            "develop",
+            TestBranch,
             Guid.NewGuid(),
             Guid.NewGuid()
         );

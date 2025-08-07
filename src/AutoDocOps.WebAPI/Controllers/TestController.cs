@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace AutoDocOps.WebAPI.Controllers;
 
+#if DEBUG
 [ApiController]
 [Route("api/[controller]")]
 public class TestController : ControllerBase
@@ -274,4 +275,5 @@ public class TestController : ControllerBase
         }
     }
 }
+#endif
 

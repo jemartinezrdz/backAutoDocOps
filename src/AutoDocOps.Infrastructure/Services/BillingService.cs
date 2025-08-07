@@ -127,18 +127,17 @@ public class BillingService : IBillingService
     }
 
     // Placeholder for database lookup
-    private async Task<string?> GetSubscriptionIdForOrganization(Guid organizationId, CancellationToken cancellationToken)
+    private Task<string?> GetSubscriptionIdForOrganization(Guid organizationId, CancellationToken cancellationToken)
     {
-        // TODO: Implement actual database lookup
-        await Task.CompletedTask;
-        return null;
+        // This method must be implemented to perform a database lookup.
+        throw new NotImplementedException("GetSubscriptionIdForOrganization must be implemented.");
     }
 
     // Placeholder for database update
-    private async Task UpdateSubscriptionStatus(Guid organizationId, string subscriptionId, string status, CancellationToken cancellationToken)
+    private Task UpdateSubscriptionStatus(Guid organizationId, string subscriptionId, string status, CancellationToken cancellationToken)
     {
-        // TODO: Implement actual database update
-        await Task.CompletedTask;
+        // This method must be implemented to perform a database update.
+        throw new NotImplementedException("UpdateSubscriptionStatus must be implemented.");
     }
 
     private async Task HandleCheckoutSessionCompleted(Event stripeEvent, CancellationToken cancellationToken)

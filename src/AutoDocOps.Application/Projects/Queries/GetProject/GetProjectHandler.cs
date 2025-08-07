@@ -27,7 +27,9 @@ public class GetProjectHandler : IRequestHandler<GetProjectQuery, GetProjectResp
             return cachedResponse;
         }
         
-        var project = await _projectRepository.GetByIdAsync(request.Id, cancellationToken);        if (project == null)
+        var project = await _projectRepository.GetByIdAsync(request.Id, cancellationToken);
+        
+        if (project == null)
         {
             throw new ArgumentException($"Project with ID {request.Id} not found.");
         }

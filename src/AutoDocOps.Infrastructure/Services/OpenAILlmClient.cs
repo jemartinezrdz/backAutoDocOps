@@ -24,7 +24,9 @@ public class OpenAILlmClient : ILlmClient
         // Basic API key validation: non-empty and plausible format (OpenAI keys typically start with "sk-", "sk-proj-", "sk-org-")
         string[] validPrefixes = { "sk-", "sk-proj-", "sk-org-" };
         if (string.IsNullOrWhiteSpace(apiKey) || apiKey.Length < MinApiKeyLength || !validPrefixes.Any(prefix => apiKey.StartsWith(prefix)))
-            throw new InvalidOperationException("OpenAI API key is invalid or malformed");        var endpoint = configuration["OpenAI:Endpoint"] ?? Environment.GetEnvironmentVariable("OPENAI_API_BASE");
+            throw new InvalidOperationException("OpenAI API key is invalid or malformed");
+        
+        var endpoint = configuration["OpenAI:Endpoint"] ?? Environment.GetEnvironmentVariable("OPENAI_API_BASE");
         var model = configuration["OpenAI:Model"] ?? "gpt-3.5-turbo";
 
         if (!string.IsNullOrEmpty(endpoint))

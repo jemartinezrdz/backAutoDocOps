@@ -1,3 +1,4 @@
+using AutoDocOps.Infrastructure.Helpers;
 using AutoDocOps.Infrastructure.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -33,38 +34,70 @@ public class DocumentationGenerationServiceOverflowTests
         _mockOptions.Setup(x => x.Value).Returns(_options);
     }
 
-    [Fact]
-    public void ExponentialBackoff_DoesNotOverflow_WithLargeRetryCount()
+    [Theory]
+    [InlineData(60000, 3600000)] // 1 min → max 60 min
+    [InlineData(1000, 10000)] // 1 sec → max 10 sec
+    [InlineData(30000, 120000)] // 30 sec → max 2 min
+    public void BackoffHelper_IsBounded_WithVariousDelays(long startMs, long maxMs)
     {
-        // Arrange - Create service instance
-        var service = new DocumentationGenerationService(_mockScopeFactory.Object, _mockLogger.Object, _mockOptions.Object);
-        
-        // Use reflection to access private field for testing
-        var currentRetryDelayField = typeof(DocumentationGenerationService)
-            .GetField("_currentRetryDelay", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        
-        Assert.NotNull(currentRetryDelayField);
+        // Arrange
+        var current = TimeSpan.FromMilliseconds(startMs);
+        var max = TimeSpan.FromMilliseconds(maxMs);
 
-        // Act & Assert - Simulate many failures without overflow
-        var initialDelay = TimeSpan.FromMinutes(1);
-        currentRetryDelayField.SetValue(service, initialDelay);
-
-        // Simulate exponential backoff calculation multiple times
-        for (int i = 0; i < 50; i++) // Many iterations to test overflow protection
+        // Act & Assert - Test multiple iterations
+        for (int i = 0; i < 50; i++)
         {
-            var currentDelay = (TimeSpan)currentRetryDelayField.GetValue(service)!;
+            current = BackoffHelper.NextDelay(current, max);
             
-            // Simulate the exponential backoff logic from the service
-            var nextDelayMs = Math.Min(currentDelay.TotalMilliseconds * 2, TimeSpan.FromHours(1).TotalMilliseconds);
-            var nextDelay = TimeSpan.FromMilliseconds(nextDelayMs);
-            
-            currentRetryDelayField.SetValue(service, nextDelay);
-            
-            // Assert no overflow occurred - delay should be reasonable
-            Assert.True(nextDelay.TotalMilliseconds > 0, "Delay should be positive");
-            Assert.True(nextDelay.TotalMilliseconds < TimeSpan.FromDays(1).TotalMilliseconds, "Delay should not exceed 1 day");
-            Assert.True(nextDelay <= TimeSpan.FromHours(1), "Delay should not exceed max retry delay");
+            // Assert delay is always within bounds
+            Assert.True(current.TotalMilliseconds > 0, "Delay should be positive");
+            Assert.True(current <= max, $"Delay {current.TotalMilliseconds}ms should not exceed max {max.TotalMilliseconds}ms");
         }
+        
+        // Final assertion - should converge to max
+        Assert.Equal(max, current);
+    }
+
+    [Fact]
+    public void BackoffHelper_HandlesOverflow_GracefullyReturnsMax()
+    {
+        // Arrange - Use TimeSpan.MaxValue which when doubled will definitely overflow
+        var largeDelay = TimeSpan.MaxValue;
+        var maxDelay = TimeSpan.FromHours(1);
+
+        // Act - This should handle overflow gracefully
+        var result = BackoffHelper.NextDelay(largeDelay, maxDelay);
+
+        // Assert - Should return max delay, not throw
+        Assert.Equal(maxDelay, result);
+    }
+
+    [Fact]
+    public void BackoffHelper_CheckedArithmetic_ThrowsOverflowOnLargeValues()
+    {
+        // Arrange - Use a value that will cause overflow when doubled in checked arithmetic
+        var nearMaxTicks = long.MaxValue / 2 + 1000; // This will overflow when doubled
+        var largeDelay = new TimeSpan(nearMaxTicks);
+        var maxDelay = TimeSpan.FromDays(365); // Large max to ensure we hit overflow, not max limit
+
+        // Act & Assert - Should throw OverflowException due to checked arithmetic
+        Assert.Throws<OverflowException>(() => BackoffHelper.NextDelay(largeDelay, maxDelay));
+    }
+
+    [Fact]
+    public void BackoffHelper_WithNormalValues_DoublesCorrectly()
+    {
+        // Arrange
+        var initial = TimeSpan.FromSeconds(1);
+        var max = TimeSpan.FromMinutes(10);
+
+        // Act
+        var second = BackoffHelper.NextDelay(initial, max);
+        var third = BackoffHelper.NextDelay(second, max);
+
+        // Assert - Should double each time until max
+        Assert.Equal(TimeSpan.FromSeconds(2), second);
+        Assert.Equal(TimeSpan.FromSeconds(4), third);
     }
 
     [Fact]

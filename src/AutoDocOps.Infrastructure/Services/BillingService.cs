@@ -5,6 +5,8 @@ using Microsoft.Extensions.Logging;
 using Stripe;
 using Stripe.Checkout;
 using StripeSubscription = Stripe.Subscription;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace AutoDocOps.Infrastructure.Services;
 
@@ -20,6 +22,16 @@ public class BillingService : IBillingService
         _configuration = configuration;
         _stripeApiKey = _configuration["Stripe:SecretKey"] 
             ?? throw new InvalidOperationException("Stripe SecretKey is not configured");
+    }
+
+    /// <summary>
+    /// Helper to hash/anonymize organization IDs for secure logging
+    /// </summary>
+    private static string AnonymizeOrganizationId(Guid organizationId)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(organizationId.ToString()));
+        // Use first 12 hex chars for better collision resistance while maintaining readability
+        return Convert.ToHexString(bytes)[..12];
     }
 
     public async Task HandleAsync(Event stripeEvent, CancellationToken cancellationToken = default)
@@ -85,14 +97,14 @@ public class BillingService : IBillingService
             var service = new SessionService(new StripeClient(_stripeApiKey));
             var session = await service.CreateAsync(options, cancellationToken: cancellationToken);
             
-            _logger.LogInformation("Created checkout session {SessionId} for organization {OrganizationId}", 
-                session.Id, organizationId);
+            _logger.LogInformation("Created checkout session {SessionId} for anonymized org {AnonymizedOrgId}", 
+                session.Id, AnonymizeOrganizationId(organizationId));
             
             return session.Url;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating checkout session for organization {OrganizationId}", organizationId);
+            _logger.LogError(ex, "Error creating checkout session for anonymized org {AnonymizedOrgId}", AnonymizeOrganizationId(organizationId));
             throw;
         }
     }
@@ -106,7 +118,7 @@ public class BillingService : IBillingService
             string? subscriptionId = await GetSubscriptionIdForOrganization(organizationId, cancellationToken);
             if (string.IsNullOrEmpty(subscriptionId))
             {
-                _logger.LogWarning("No subscription found for organization {OrganizationId}", organizationId);
+                _logger.LogWarning("No subscription found for anonymized org {AnonymizedOrgId}", AnonymizeOrganizationId(organizationId));
                 return false;
             }
 
@@ -116,12 +128,12 @@ public class BillingService : IBillingService
             // TODO: Update subscription status in database
             await UpdateSubscriptionStatus(organizationId, canceledSubscription.Id, "canceled", cancellationToken);
 
-            _logger.LogInformation("Canceled subscription {SubscriptionId} for organization {OrganizationId}", canceledSubscription.Id, organizationId);
+            _logger.LogInformation("Canceled subscription {SubscriptionId} for anonymized org {AnonymizedOrgId}", canceledSubscription.Id, AnonymizeOrganizationId(organizationId));
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error canceling subscription for organization {OrganizationId}", organizationId);
+            _logger.LogError(ex, "Error canceling subscription for anonymized org {AnonymizedOrgId}", AnonymizeOrganizationId(organizationId));
             return false;
         }
     }
@@ -131,8 +143,8 @@ public class BillingService : IBillingService
     {
         // TODO (issue #123): Replace with actual repository query.
         _logger.LogWarning(
-            "GetSubscriptionIdForOrganization called for {OrganizationId} without database implementation",
-            organizationId);
+            "GetSubscriptionIdForOrganization called for anonymized org {AnonymizedOrgId} without database implementation",
+            AnonymizeOrganizationId(organizationId));
 
         await Task.CompletedTask;
         return null; // Forces 'no subscription found' flow
@@ -143,8 +155,8 @@ public class BillingService : IBillingService
     {
         // TODO (issue #124): Implement actual database persistence.
         _logger.LogInformation(
-            "Mock subscription status update: Organization {OrganizationId}, Subscription {SubscriptionId} => {Status}",
-            organizationId, subscriptionId, status);
+            "Mock subscription status update: Anonymized org {AnonymizedOrgId}, Subscription {SubscriptionId} => {Status}",
+            AnonymizeOrganizationId(organizationId), subscriptionId, status);
 
         await Task.CompletedTask;
     }
@@ -161,7 +173,7 @@ public class BillingService : IBillingService
             Guid.TryParse(orgIdString, out var organizationId))
         {
             // TODO: Create or update subscription in database
-            _logger.LogInformation("Creating subscription for organization {OrganizationId}", organizationId);
+            _logger.LogInformation("Creating subscription for anonymized org {AnonymizedOrgId}", AnonymizeOrganizationId(organizationId));
         }
         
         await Task.CompletedTask;

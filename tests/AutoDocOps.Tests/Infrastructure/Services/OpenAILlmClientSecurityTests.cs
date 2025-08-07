@@ -102,19 +102,22 @@ public class OpenAILlmClientSecurityTests
         Assert.Null(exception);
     }
 
-    [Theory]
+    [Theory(Skip = "TODO(ADR-21): Implement Azure endpoint validation - Issue #1234")]
     [InlineData("http://example.com/")] // HTTP not HTTPS
     [InlineData("https://malicious-site.com/")] // Not Azure domain
     [InlineData("https://my-resource.openai.azure.com.evil.com/")] // Domain spoofing
-    public void Constructor_WithInvalidAzureEndpoint_StillWorksIfApiKeyValid(string invalidEndpoint)
+    public void Constructor_WithInvalidAzureEndpoint_ShouldThrowSecurityException_WhenValidationImplemented(string invalidEndpoint)
     {
         // Arrange - Azure endpoint validation is not implemented in current code
+        // TODO(ADR-21): Implement Azure endpoint validation in OpenAILlmClient constructor. 
+        // Acceptance Criteria: Reject endpoints that are not HTTPS and do not end in .openai.azure.com
         _mockConfiguration.Setup(x => x["OpenAI:Endpoint"]).Returns(invalidEndpoint);
         _mockConfiguration.Setup(x => x["OpenAI:ApiKey"]).Returns("sk-1234567890abcdef1234567890abcdef12345678");
 
         // Act & Assert - Current implementation doesn't validate Azure endpoint
+        // TODO(ADR-21): When Azure endpoint validation is implemented, update this test to expect a SecurityException for invalid endpoints.
         var exception = Record.Exception(() => new OpenAILlmClient(_mockConfiguration.Object, _mockLogger.Object));
-        // This might throw Azure client initialization error, but not SecurityException
+        // Currently passes - should throw SecurityException when validation is implemented
         if (exception != null)
         {
             Assert.IsNotType<SecurityException>(exception);

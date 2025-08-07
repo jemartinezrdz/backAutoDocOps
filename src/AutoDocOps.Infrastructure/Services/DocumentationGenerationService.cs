@@ -1,5 +1,6 @@
 using AutoDocOps.Domain.Entities;
 using AutoDocOps.Domain.Interfaces;
+using AutoDocOps.Infrastructure.Helpers;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -56,9 +57,8 @@ public class DocumentationGenerationService : BackgroundService
             catch (Exception ex)
             {
                 _failureCount++;
-                // Exponential backoff: double the delay, up to maxRetryDelay using TotalMilliseconds to prevent overflow
-                var nextDelayMs = Math.Min(_currentRetryDelay.TotalMilliseconds * 2, _maxRetryDelay.TotalMilliseconds);
-                _currentRetryDelay = TimeSpan.FromMilliseconds(nextDelayMs);
+                // Exponential backoff: double the delay, up to maxRetryDelay using BackoffHelper for precision and overflow protection
+                _currentRetryDelay = BackoffHelper.NextDelay(_currentRetryDelay, _maxRetryDelay);
                 _logger.LogError(ex, "Critical error in documentation generation service at {ErrorTime}. Retrying after {RetryDelay} (attempt {FailureCount})", DateTime.UtcNow, _currentRetryDelay, _failureCount);
                 await Task.Delay(_currentRetryDelay, stoppingToken);
             }

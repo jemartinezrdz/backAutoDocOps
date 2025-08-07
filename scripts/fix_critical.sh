@@ -8,7 +8,7 @@ echo "🔧 Executing AutoDocOps Critical Security Fixes..."
 
 # 1. Validate no hardcoded secrets in versioned files
 echo "🔍 Checking for hardcoded secrets..."
-if grep -r "password=postgres\|sk_test_\|pk_test_\|sk_live_\|pk_live_" --include="*.cs" --include="*.json" --exclude-dir=".git" .; then
+if grep -r "password=postgres\|sk_test_\|pk_test_\|sk_live_\|pk_live_\|api_key=\|apikey=\|ghp_[0-9a-zA-Z]\{36\}\|GITHUB_TOKEN\|JWT_SECRET\|ConnectionString.*password\|Server=.*Password=" --include="*.cs" --include="*.json" --include="*.yml" --include="*.yaml" --exclude-dir=".git" .; then
     echo "❌ ERROR: Hardcoded secrets found in versioned files!"
     echo "   Please remove all hardcoded secrets and use environment variables."
     exit 1

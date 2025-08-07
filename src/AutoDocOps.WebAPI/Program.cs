@@ -245,7 +245,8 @@ static async Task<IResult> HandleStripeWebhookAsync(
     
     if (string.IsNullOrWhiteSpace(webhookSecret))
     {
-        throw new InvalidOperationException("STRIPE_WEBHOOK_SECRET environment variable is not configured. Please set it in your environment or configuration.");
+        logger.LogError("STRIPE_WEBHOOK_SECRET environment variable is not configured");
+        return Results.Problem("Webhook secret not configured", statusCode: 500);
     }
 
     Event stripeEvent;

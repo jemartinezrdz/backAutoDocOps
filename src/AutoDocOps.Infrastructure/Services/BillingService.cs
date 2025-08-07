@@ -97,9 +97,48 @@ public class BillingService : IBillingService
         }
     }
 
-    public Task<bool> CancelSubscriptionAsync(Guid organizationId, CancellationToken cancellationToken = default)
+    public async Task<bool> CancelSubscriptionAsync(Guid organizationId, CancellationToken cancellationToken = default)
     {
-        throw new NotImplementedException("CancelSubscriptionAsync is not yet implemented. This method requires implementation of: 1. Database subscription lookup, 2. Stripe API cancellation, 3. Database status update.");
+        try
+        {
+            // TODO: Lookup subscription in database for the given organization
+            // Placeholder: Assume we have a method GetSubscriptionIdForOrganization
+            string? subscriptionId = await GetSubscriptionIdForOrganization(organizationId, cancellationToken);
+            if (string.IsNullOrEmpty(subscriptionId))
+            {
+                _logger.LogWarning("No subscription found for organization {OrganizationId}", organizationId);
+                return false;
+            }
+
+            var subscriptionService = new SubscriptionService(new StripeClient(_stripeApiKey));
+            var canceledSubscription = await subscriptionService.CancelAsync(subscriptionId, null, cancellationToken: cancellationToken);
+
+            // TODO: Update subscription status in database
+            await UpdateSubscriptionStatus(organizationId, canceledSubscription.Id, "canceled", cancellationToken);
+
+            _logger.LogInformation("Canceled subscription {SubscriptionId} for organization {OrganizationId}", canceledSubscription.Id, organizationId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error canceling subscription for organization {OrganizationId}", organizationId);
+            return false;
+        }
+    }
+
+    // Placeholder for database lookup
+    private async Task<string?> GetSubscriptionIdForOrganization(Guid organizationId, CancellationToken cancellationToken)
+    {
+        // TODO: Implement actual database lookup
+        await Task.CompletedTask;
+        return null;
+    }
+
+    // Placeholder for database update
+    private async Task UpdateSubscriptionStatus(Guid organizationId, string subscriptionId, string status, CancellationToken cancellationToken)
+    {
+        // TODO: Implement actual database update
+        await Task.CompletedTask;
     }
 
     private async Task HandleCheckoutSessionCompleted(Event stripeEvent, CancellationToken cancellationToken)

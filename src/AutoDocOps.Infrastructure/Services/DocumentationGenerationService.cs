@@ -13,6 +13,9 @@ public class DocumentationGenerationService : BackgroundService
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ILogger<DocumentationGenerationService> _logger;
     private readonly DocumentationGenerationOptions _options;
+    private int _failureCount = 0;
+    private TimeSpan _currentRetryDelay;
+    private readonly TimeSpan _maxRetryDelay = TimeSpan.FromHours(1); // Maximum retry delay
 
     public DocumentationGenerationService(
         IServiceScopeFactory serviceScopeFactory,
@@ -22,6 +25,7 @@ public class DocumentationGenerationService : BackgroundService
         _serviceScopeFactory = serviceScopeFactory;
         _logger = logger;
         _options = options.Value;
+        _currentRetryDelay = TimeSpan.FromMinutes(_options.RetryDelayMinutes);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -39,6 +43,9 @@ public class DocumentationGenerationService : BackgroundService
                 });
 
                 await ProcessPendingPassports(stoppingToken);
+                // Reset failure count on successful processing
+                _failureCount = 0;
+                _currentRetryDelay = TimeSpan.FromMinutes(_options.RetryDelayMinutes);
                 await Task.Delay(TimeSpan.FromSeconds(_options.CheckIntervalSeconds), stoppingToken);
             }
             catch (OperationCanceledException ex)
@@ -48,8 +55,11 @@ public class DocumentationGenerationService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Critical error in documentation generation service at {ErrorTime}", DateTime.UtcNow);
-                await Task.Delay(TimeSpan.FromMinutes(_options.RetryDelayMinutes), stoppingToken);
+                _failureCount++;
+                // Exponential backoff: double the delay, up to maxRetryDelay
+                _currentRetryDelay = TimeSpan.FromTicks(Math.Min(_currentRetryDelay.Ticks * 2, _maxRetryDelay.Ticks));
+                _logger.LogError(ex, "Critical error in documentation generation service at {ErrorTime}. Retrying after {RetryDelay} (attempt {FailureCount})", DateTime.UtcNow, _currentRetryDelay, _failureCount);
+                await Task.Delay(_currentRetryDelay, stoppingToken);
             }
         }
 

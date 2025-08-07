@@ -5,12 +5,18 @@ using Microsoft.Extensions.Logging;
 using OpenAI.Chat;
 using System.ClientModel;
 using System.Runtime.CompilerServices;
+using System.Security;
+using System.Text.RegularExpressions;
 
 namespace AutoDocOps.Infrastructure.Services;
 
 public class OpenAILlmClient : ILlmClient
 {
     private const int MinApiKeyLength = 20;
+    private static readonly string[] ValidPrefixes = { "sk-", "sk-proj-", "sk-org-" };
+    private static readonly Regex ApiKeyFormat = 
+        new(@"^(sk|sk-proj|sk-org)-[a-zA-Z0-9]{16,}$", RegexOptions.Compiled);
+    
     private readonly ChatClient _chatClient;
     private readonly ILogger<OpenAILlmClient> _logger;
 
@@ -21,10 +27,15 @@ public class OpenAILlmClient : ILlmClient
         var apiKey = configuration["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY")
             ?? throw new InvalidOperationException("OpenAI API key is not configured");
         
-        // Basic API key validation: non-empty and plausible format (OpenAI keys typically start with "sk-", "sk-proj-", "sk-org-")
-        string[] validPrefixes = { "sk-", "sk-proj-", "sk-org-" };
-        if (string.IsNullOrWhiteSpace(apiKey) || apiKey.Length < MinApiKeyLength || !validPrefixes.Any(prefix => apiKey.StartsWith(prefix)))
-            throw new InvalidOperationException("OpenAI API key is invalid or malformed");
+        // Comprehensive API key validation with proper AND logic
+        if (string.IsNullOrWhiteSpace(apiKey) ||
+            apiKey.Length < MinApiKeyLength ||
+            !ValidPrefixes.Any(apiKey.StartsWith) ||
+            !ApiKeyFormat.IsMatch(apiKey))
+        {
+            _logger.LogWarning("Invalid OpenAI API key format");
+            throw new SecurityException("OpenAI API key is invalid or malformed.");
+        }
         
         var endpoint = configuration["OpenAI:Endpoint"] ?? Environment.GetEnvironmentVariable("OPENAI_API_BASE");
         var model = configuration["OpenAI:Model"] ?? "gpt-3.5-turbo";

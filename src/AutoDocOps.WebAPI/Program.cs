@@ -10,6 +10,9 @@ using Asp.Versioning.ApiExplorer;
 using Microsoft.OpenApi.Models;
 using Stripe;
 using System.Reflection;
+using System.Text;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -128,6 +131,18 @@ builder.Services.AddSession(options =>
 // Add health checks
 builder.Services.AddHealthChecks();
 
+// Add rate limiting for webhooks
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("stripe-webhook", policy =>
+    {
+        policy.PermitLimit = 20; // 20 requests per minute
+        policy.Window = TimeSpan.FromMinutes(1);
+        policy.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+        policy.QueueLimit = 0; // No queueing
+    });
+});
+
 // Configure logging
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
@@ -163,6 +178,9 @@ app.Use(async (context, next) =>
 
 app.UseCors();
 
+// Add rate limiting middleware
+app.UseRateLimiter();
+
 // Add session middleware
 app.UseSession();
 
@@ -170,40 +188,85 @@ app.UseSession();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Stripe webhook endpoint
-app.MapPost("/billing/stripe-webhook", async (HttpRequest request, IBillingService billingService, IConfiguration config, ILogger<Program> logger) =>
+// Stripe webhook endpoint with security enhancements
+app.MapPost("/billing/stripe-webhook", HandleStripeWebhookAsync)
+    .RequireRateLimiting("stripe-webhook")
+    .Accepts<string>("application/json")
+    .WithName("StripeWebhook")
+    .WithTags("Billing")
+    .AllowAnonymous();
+
+// Secure Stripe webhook handler
+static async Task<IResult> HandleStripeWebhookAsync(
+    HttpRequest request,
+    ILogger<Program> logger,
+    IConfiguration config,
+    IBillingService billingService,
+    CancellationToken cancellationToken = default)
 {
+    const int MaxBodyBytes = 256 * 1024; // 256 KB limit
+
+    // Validate content type
+    if (!request.ContentType?.StartsWith("application/json") ?? true)
+    {
+        return Results.BadRequest("Content-Type must be application/json");
+    }
+
+    // Read body with size limit
+    using var memoryStream = new MemoryStream();
+    var buffer = new byte[4096];
+    int totalRead = 0;
+    int bytesRead;
+
+    while ((bytesRead = await request.Body.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+    {
+        totalRead += bytesRead;
+        if (totalRead > MaxBodyBytes)
+        {
+            return Results.BadRequest("Request body too large");
+        }
+        await memoryStream.WriteAsync(buffer, 0, bytesRead, cancellationToken);
+    }
+
+    var json = Encoding.UTF8.GetString(memoryStream.ToArray());
+    
+    // Validate Stripe signature
+    var stripeSignature = request.Headers["Stripe-Signature"].FirstOrDefault();
+    if (string.IsNullOrEmpty(stripeSignature))
+    {
+        return Results.BadRequest("Missing Stripe signature");
+    }
+
+    var webhookSecret = Environment.GetEnvironmentVariable("STRIPE_WEBHOOK_SECRET")
+        ?? config["Stripe:WebhookSecret"];
+    
+    if (string.IsNullOrWhiteSpace(webhookSecret))
+    {
+        throw new InvalidOperationException("STRIPE_WEBHOOK_SECRET environment variable is not configured. Please set it in your environment or configuration.");
+    }
+
+    Event stripeEvent;
     try
     {
-        var json = await new StreamReader(request.Body).ReadToEndAsync();
-        var stripeSignature = request.Headers["Stripe-Signature"].FirstOrDefault();
-        
-        if (string.IsNullOrEmpty(stripeSignature))
-        {
-            return Results.BadRequest("Missing Stripe signature");
-        }
-
-        var webhookSecret = Environment.GetEnvironmentVariable("STRIPE_WEBHOOK_SECRET")
-            ?? config["Stripe:WebhookSecret"]
-            ?? throw new InvalidOperationException("STRIPE_WEBHOOK_SECRET environment variable is not configured. Please set it in your environment or configuration.");
-        
-        var stripeEvent = EventUtility.ConstructEvent(json, stripeSignature, webhookSecret);
-        
-        await billingService.HandleAsync(stripeEvent);
-        
-        return Results.Ok();
-    }
-    catch (StripeException ex)
-    {
-        logger.LogError(ex, "Stripe webhook error: {Message}", ex.Message);
-        return Results.BadRequest($"Stripe error: {ex.Message}");
+        stripeEvent = EventUtility.ConstructEvent(json, stripeSignature, webhookSecret, throwOnApiVersionMismatch: false);
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Webhook error: {Message}", ex.Message);
+        logger.LogWarning(ex, "Invalid Stripe webhook signature");
+        return Results.BadRequest("Invalid signature");
+    }
+
+    try
+    {
+        await billingService.HandleAsync(stripeEvent, cancellationToken);
+        return Results.Ok();
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error processing Stripe webhook: {EventType}", stripeEvent.Type);
         return Results.StatusCode(500);
     }
-}).WithTags("Billing").AllowAnonymous();
+}
 
 // Chat streaming endpoint
 app.MapPost("/chat/stream", async (ChatRequest request, ILlmClient llmClient, HttpContext context, ILogger<Program> logger) =>

@@ -56,8 +56,9 @@ public class DocumentationGenerationService : BackgroundService
             catch (Exception ex)
             {
                 _failureCount++;
-                // Exponential backoff: double the delay, up to maxRetryDelay
-                _currentRetryDelay = TimeSpan.FromTicks(Math.Min(_currentRetryDelay.Ticks * 2, _maxRetryDelay.Ticks));
+                // Exponential backoff: double the delay, up to maxRetryDelay using TotalMilliseconds to prevent overflow
+                var nextDelayMs = Math.Min(_currentRetryDelay.TotalMilliseconds * 2, _maxRetryDelay.TotalMilliseconds);
+                _currentRetryDelay = TimeSpan.FromMilliseconds(nextDelayMs);
                 _logger.LogError(ex, "Critical error in documentation generation service at {ErrorTime}. Retrying after {RetryDelay} (attempt {FailureCount})", DateTime.UtcNow, _currentRetryDelay, _failureCount);
                 await Task.Delay(_currentRetryDelay, stoppingToken);
             }

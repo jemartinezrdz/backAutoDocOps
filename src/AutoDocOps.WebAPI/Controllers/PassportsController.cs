@@ -2,6 +2,7 @@ using AutoDocOps.Application.Passports.Queries.GetPassport;
 using AutoDocOps.Application.Passports.Queries.GetPassportsByProject;
 using AutoDocOps.Application.Passports.Commands.DeletePassport;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
 
@@ -11,6 +12,7 @@ namespace AutoDocOps.WebAPI.Controllers;
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/[controller]")]
 [Produces("application/json")]
+[Authorize(Policy = "DeveloperOrAdmin")]
 public class PassportsController : ControllerBase
 {
     private readonly IMediator _mediator;

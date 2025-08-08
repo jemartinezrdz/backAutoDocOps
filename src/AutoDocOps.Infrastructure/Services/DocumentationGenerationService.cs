@@ -1,8 +1,10 @@
 using AutoDocOps.Domain.Entities;
 using AutoDocOps.Domain.Interfaces;
+using AutoDocOps.Infrastructure.Helpers;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using System.Text.Json;
 
 namespace AutoDocOps.Infrastructure.Services;
@@ -11,13 +13,20 @@ public class DocumentationGenerationService : BackgroundService
 {
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ILogger<DocumentationGenerationService> _logger;
+    private readonly DocumentationGenerationOptions _options;
+    private int _failureCount = 0;
+    private TimeSpan _currentRetryDelay;
+    private readonly TimeSpan _maxRetryDelay = TimeSpan.FromHours(1); // Maximum retry delay
 
     public DocumentationGenerationService(
         IServiceScopeFactory serviceScopeFactory,
-        ILogger<DocumentationGenerationService> logger)
+        ILogger<DocumentationGenerationService> logger,
+        IOptions<DocumentationGenerationOptions> options)
     {
         _serviceScopeFactory = serviceScopeFactory;
         _logger = logger;
+        _options = options.Value;
+        _currentRetryDelay = TimeSpan.FromMinutes(_options.RetryDelayMinutes);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -35,17 +44,23 @@ public class DocumentationGenerationService : BackgroundService
                 });
 
                 await ProcessPendingPassports(stoppingToken);
-                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); // Check every 30 seconds
+                // Reset failure count on successful processing
+                _failureCount = 0;
+                _currentRetryDelay = TimeSpan.FromMinutes(_options.RetryDelayMinutes);
+                await Task.Delay(TimeSpan.FromSeconds(_options.CheckIntervalSeconds), stoppingToken);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException ex)
             {
-                _logger.LogInformation("Documentation Generation Service is shutting down gracefully");
+                _logger.LogInformation(ex, "Documentation Generation Service is shutting down gracefully");
                 break;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Critical error in documentation generation service at {ErrorTime}", DateTime.UtcNow);
-                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken); // Wait before retrying
+                _failureCount++;
+                // Exponential backoff: double the delay, up to maxRetryDelay using BackoffHelper for precision and overflow protection
+                _currentRetryDelay = BackoffHelper.NextDelay(_currentRetryDelay, _maxRetryDelay);
+                _logger.LogError(ex, "Critical error in documentation generation service at {ErrorTime}. Retrying after {RetryDelay} (attempt {FailureCount})", DateTime.UtcNow, _currentRetryDelay, _failureCount);
+                await Task.Delay(_currentRetryDelay, stoppingToken);
             }
         }
 
@@ -116,7 +131,10 @@ public class DocumentationGenerationService : BackgroundService
         }
 
         // Simulate documentation generation process
-        await SimulateDocumentationGeneration(passport, project, cancellationToken);
+        if (_options.EnableSimulation)
+        {
+            await SimulateDocumentationGeneration(passport, cancellationToken);
+        }
 
         // Mark as completed
         passport.Status = PassportStatus.Completed;
@@ -139,7 +157,7 @@ public class DocumentationGenerationService : BackgroundService
         _logger.LogInformation("Completed processing passport {PassportId}", passport.Id);
     }
 
-    private async Task SimulateDocumentationGeneration(Passport passport, Project project, CancellationToken cancellationToken)
+    private async Task SimulateDocumentationGeneration(Passport passport, CancellationToken cancellationToken)
     {
         // Simulate different phases of documentation generation
         var phases = new[]
@@ -151,7 +169,7 @@ public class DocumentationGenerationService : BackgroundService
             "Formatting output..."
         };
 
-        var phaseDelay = TimeSpan.FromSeconds(2); // Simulate processing time
+        var phaseDelay = TimeSpan.FromSeconds(_options.SimulationPhaseDelaySeconds);
 
         foreach (var phase in phases)
         {
@@ -163,7 +181,7 @@ public class DocumentationGenerationService : BackgroundService
         }
     }
 
-    private string GenerateDocumentationContent(Project project)
+    private static string GenerateDocumentationContent(Project project)
     {
         var content = $@"# {project.Name} Documentation
 

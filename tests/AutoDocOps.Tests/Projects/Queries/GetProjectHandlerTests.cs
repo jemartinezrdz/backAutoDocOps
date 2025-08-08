@@ -1,4 +1,5 @@
 using AutoDocOps.Application.Projects.Queries.GetProject;
+using AutoDocOps.Application.Common.Interfaces;
 using AutoDocOps.Domain.Entities;
 using AutoDocOps.Domain.Interfaces;
 using Moq;
@@ -9,15 +10,17 @@ namespace AutoDocOps.Tests.Projects.Queries;
 public class GetProjectHandlerTests
 {
     private readonly Mock<IProjectRepository> _mockProjectRepository;
+    private readonly Mock<ICacheService> _mockCacheService;
     private readonly GetProjectHandler _handler;
 
     public GetProjectHandlerTests()
     {
         _mockProjectRepository = new Mock<IProjectRepository>();
-        _handler = new GetProjectHandler(_mockProjectRepository.Object);
+        _mockCacheService = new Mock<ICacheService>();
+        _handler = new GetProjectHandler(_mockProjectRepository.Object, _mockCacheService.Object);
     }
 
-    [Fact]
+    [Fact(Timeout = 2000)]
     public async Task Handle_ValidProjectId_ReturnsProjectResponse()
     {
         // Arrange
@@ -59,7 +62,7 @@ public class GetProjectHandlerTests
         Assert.True(result.Project.IsActive);
     }
 
-    [Fact]
+    [Fact(Timeout = 2000)]
     public async Task Handle_ProjectNotFound_ThrowsArgumentException()
     {
         // Arrange

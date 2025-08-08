@@ -31,8 +31,8 @@ public class GeneratePassportHandler : IRequestHandler<GeneratePassportCommand, 
         {
             Id = Guid.NewGuid(),
             ProjectId = request.ProjectId,
-            Version = request.Version,
-            Format = request.Format,
+            Version = string.IsNullOrWhiteSpace(request.Version) ? "1.0.0" : request.Version,
+            Format = string.IsNullOrWhiteSpace(request.Format) ? "markdown" : request.Format,
             Status = PassportStatus.Generating,
             GeneratedAt = DateTime.UtcNow,
             GeneratedBy = request.GeneratedBy,
@@ -41,12 +41,7 @@ public class GeneratePassportHandler : IRequestHandler<GeneratePassportCommand, 
 
         var createdPassport = await _passportRepository.CreateAsync(passport, cancellationToken);
 
-        // TODO: Trigger background job to process the documentation generation
-        // This would involve:
-        // 1. Clone repository
-        // 2. Analyze code with IL Scanner
-        // 3. Generate documentation
-        // 4. Update passport status and content
+        // Background service will pick up the passport with "Generating" status and process it
 
         return new GeneratePassportResponse(
             createdPassport.Id,

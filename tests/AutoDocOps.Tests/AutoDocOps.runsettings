@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <RunConfiguration>
+    <ResultsDirectory>TestResults</ResultsDirectory>
+    <TargetFrameworkVersion>net8.0</TargetFrameworkVersion>
+    <CollectSourceInformation>true</CollectSourceInformation>
+    <MaxCpuCount>1</MaxCpuCount>
+    <BatchSize>50</BatchSize>
+    <TreatNoTestsAsError>true</TreatNoTestsAsError>
+    <TestSessionTimeout>600000</TestSessionTimeout>
+    <ConsoleLoggerParameters>verbosity=minimal</ConsoleLoggerParameters>
+  </RunConfiguration>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>opencover,json</Format>
+          <ExcludeByFile>**/Migrations/*.cs</ExcludeByFile>
+          <Exclude>[xunit.*]*</Exclude>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+  <InProcDataCollectionRunSettings>
+    <InProcDataCollectors>
+      <InProcDataCollector assemblyQualifiedName="Coverlet.Collector.DataCollection.CoverageInProcDataCollector, coverlet.collector, Version=6.0.0.0, Culture=neutral, PublicKeyToken=7f3ee0f0e4744149" friendlyName="CoverletCoverageCollector" enabled="true" />
+    </InProcDataCollectors>
+  </InProcDataCollectionRunSettings>
+</RunSettings>

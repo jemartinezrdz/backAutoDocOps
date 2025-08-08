@@ -25,11 +25,14 @@ RUN dotnet publish "AutoDocOps.WebAPI.csproj" -c Release -o /app/publish /p:UseA
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 
+# Install curl for health checks and security updates
+RUN apt-get update && \
+    apt-get install -y curl && \
+    apt-get upgrade -y && \
+    rm -rf /var/lib/apt/lists/*
+
 # Create non-root user
 RUN groupadd -r autodocops && useradd -r -g autodocops autodocops
-
-# Install security updates
-RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 
 # Copy published application
 COPY --from=publish /app/publish .

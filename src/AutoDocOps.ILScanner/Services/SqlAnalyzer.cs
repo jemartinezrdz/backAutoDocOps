@@ -219,7 +219,7 @@ public class SqlAnalyzer
         }
     }
 
-    private async Task ExtractStoredProceduresAndFunctions(string sqlContent, SqlMetadata metadata, CancellationToken cancellationToken)
+    private Task ExtractStoredProceduresAndFunctions(string sqlContent, SqlMetadata metadata, CancellationToken cancellationToken)
     {
         // Extract stored procedures
         var procedureMatches = Regex.Matches(sqlContent,
@@ -274,6 +274,8 @@ public class SqlAnalyzer
             ParseParameters(parameters, functionMetadata.Parameters);
             metadata.Functions.Add(functionMetadata);
         }
+        
+        return Task.CompletedTask;
     }
 
     private void ParseParameters(string parametersString, Google.Protobuf.Collections.RepeatedField<ParameterMetadata> parameters)

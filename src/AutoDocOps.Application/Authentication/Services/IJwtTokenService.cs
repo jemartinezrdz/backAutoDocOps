@@ -8,5 +8,5 @@ public interface IJwtTokenService
     string GenerateToken(Guid userId, string email, IEnumerable<string> roles, Guid? organizationId = null);
     string GenerateRefreshToken();
     ClaimsPrincipal? ValidateToken(string token);
-    bool ValidateRefreshToken(string refreshToken);
+    Task<bool> ValidateRefreshTokenAsync(string refreshToken);
 }

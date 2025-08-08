@@ -48,6 +48,83 @@ Backend API robusta para AutoDocOps - Sistema de generación automática de docu
 - Dependency Injection configurado
 
 ### ✅ Fase 7: CI/CD & IaC
+
+### ✅ Fase 8: Integraciones Avanzadas
+- **Redis**: Cache distribuido con RedisCacheService
+- **OpenAI**: Integración con chat streaming y cliente fake para testing
+- **Stripe**: Sistema de facturación con webhooks
+- **Grafana + Prometheus**: Monitoreo y observabilidad completos
+- **Health Checks**: Verificaciones completas de servicios
+- **Docker Compose**: Configuración completa para desarrollo y producción
+
+## 🔧 Configuración del Entorno
+
+### 🚀 Setup Rápido
+
+```bash
+# Windows PowerShell
+.\scripts\dev-setup.ps1
+
+# Linux/Mac
+chmod +x scripts/dev-setup.sh && ./scripts/dev-setup.sh
+```
+
+### Prerrequisitos
+- .NET 8 SDK
+- Docker y Docker Compose
+- PostgreSQL
+- Redis
+
+### Configuración Manual
+
+1. **Clonar el repositorio**
+```bash
+git clone https://github.com/jemartinezrdz/backAutoDocOps.git
+cd backAutoDocOps
+```
+
+2. **Configurar variables de entorno**
+```bash
+# Copiar archivo de ejemplo
+cp .env.example .env
+
+# Editar .env con tus valores reales
+nano .env
+```
+
+3. **Iniciar servicios**
+```bash
+# Usando Makefile (recomendado)
+make setup-env  # Configurar .env
+make up-dev     # Iniciar en modo desarrollo
+
+# O usando Docker Compose directamente
+docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
+```
+
+### Variables de Entorno Necesarias
+
+```bash
+# Base de datos
+DATABASE_CONNECTION_STRING=Host=localhost;Database=autodocops;Username=postgres;Password=postgres
+
+# Redis para caché distribuido
+REDIS_CONNECTION_STRING=localhost:6379
+
+# JWT para autenticación
+JWT_SECRET_KEY=your_secure_jwt_secret_key_32_chars_minimum
+
+# OpenAI/Azure OpenAI
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_API_BASE=your_azure_openai_endpoint_if_using_azure
+USE_FAKE_LLM=true  # Para desarrollo sin API real
+
+# Stripe para facturación
+STRIPE_SECRET_KEY=your_stripe_secret_key
+STRIPE_WEBHOOK_SECRET=your_stripe_webhook_secret
+```
+
+### ✅ Fase 7: CI/CD & IaC
 - Pipeline GitHub Actions completo
 - Dockerfiles para WebAPI e IL Scanner
 - Docker Compose para desarrollo local

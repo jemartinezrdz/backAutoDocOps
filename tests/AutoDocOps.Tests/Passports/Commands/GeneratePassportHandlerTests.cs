@@ -19,7 +19,7 @@ public class GeneratePassportHandlerTests
         _handler = new GeneratePassportHandler(_mockPassportRepository.Object, _mockProjectRepository.Object);
     }
 
-    [Fact]
+    [Fact(Timeout = 2000)]
     public async Task Handle_ValidRequest_CreatesPassportWithGeneratingStatus()
     {
         // Arrange
@@ -61,7 +61,7 @@ public class GeneratePassportHandlerTests
         _mockPassportRepository.Verify(x => x.CreateAsync(It.IsAny<Passport>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    [Fact]
+    [Fact(Timeout = 2000)]
     public async Task Handle_ProjectNotFound_ThrowsArgumentException()
     {
         // Arrange
@@ -80,7 +80,7 @@ public class GeneratePassportHandlerTests
         Assert.Contains($"Project with ID {projectId} not found", exception.Message);
     }
 
-    [Theory]
+    [Theory(Timeout = 3000)]
     [InlineData("", "markdown")]
     [InlineData("1.0.0", "")]
     [InlineData(null, "markdown")]

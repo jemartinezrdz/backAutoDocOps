@@ -1,5 +1,7 @@
 using AutoDocOps.Application.Authentication.Models;
 using AutoDocOps.Application.Authentication.Services;
+using AutoDocOps.Application.Common.Interfaces;
+using AutoDocOps.Application.Common.Models;
 using AutoDocOps.Domain.Interfaces;
 using AutoDocOps.Infrastructure.Authentication;
 using AutoDocOps.Infrastructure.Data;
@@ -7,6 +9,7 @@ using AutoDocOps.Infrastructure.HealthChecks;
 using AutoDocOps.Infrastructure.Repositories;
 using AutoDocOps.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using StackExchange.Redis;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -25,7 +28,7 @@ public static class DependencyInjection
         services.AddDbContext<AutoDocOpsDbContext>(options =>
         {
             var connectionString = configuration.GetConnectionString("DefaultConnection") 
-                ?? "Host=localhost;Database=autodocops;Username=postgres;Password=postgres";
+                ?? throw new InvalidOperationException("DefaultConnection is required but not configured. Please set the ConnectionStrings:DefaultConnection configuration value.");
             
             options.UseNpgsql(connectionString, npgsqlOptions =>
             {
@@ -44,6 +47,35 @@ public static class DependencyInjection
             }
         });
 
+        // Add Redis Cache
+        var redisConnectionString = configuration.GetConnectionString("Redis") ?? "localhost:6379";
+        services.AddStackExchangeRedisCache(options =>
+        {
+            options.Configuration = redisConnectionString;
+            options.InstanceName = "AutoDocOps";
+        });
+
+        // Add Redis ConnectionMultiplexer for pattern-based operations
+        services.AddSingleton<IConnectionMultiplexer>(provider =>
+            ConnectionMultiplexer.Connect(redisConnectionString));
+
+        // Add cache service
+        services.AddScoped<ICacheService, RedisCacheService>();
+
+        // Add billing service
+        services.AddScoped<IBillingService, BillingService>();
+
+        // Add LLM client
+        var useFakeLlm = Environment.GetEnvironmentVariable("USE_FAKE_LLM")?.ToLower() == "true";
+        if (useFakeLlm)
+        {
+            services.AddScoped<ILlmClient, FakeLlmClient>();
+        }
+        else
+        {
+            services.AddScoped<ILlmClient, OpenAILlmClient>();
+        }
+
         // Add repositories
         services.AddScoped<IProjectRepository, ProjectRepository>();
         services.AddScoped<ISpecRepository, SpecRepository>();
@@ -53,8 +85,12 @@ public static class DependencyInjection
         services.Configure<DocumentationGenerationOptions>(
             configuration.GetSection(DocumentationGenerationOptions.SectionName));
 
-        // Add background services
-        services.AddHostedService<DocumentationGenerationService>();
+        // Add background services (conditionally based on environment/configuration)
+        var enableDocumentationGeneration = configuration.GetValue<bool>("Features:EnableDocumentationGeneration", false);
+        if (enableDocumentationGeneration)
+        {
+            services.AddHostedService<DocumentationGenerationService>();
+        }
 
         // Configure JWT settings
         services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));
@@ -110,7 +146,15 @@ public static class DependencyInjection
 
         // Add Health Checks
         services.AddHealthChecks()
-            .AddCheck<DocumentationServiceHealthCheck>("documentation_service");
+            .AddCheck<DocumentationServiceHealthCheck>("documentation_service")
+            .AddCheck<CacheHealthCheck>("cache_service") 
+            .AddCheck<LlmHealthCheck>("llm_service")
+            .AddNpgSql(
+                connectionString: configuration.GetConnectionString("DefaultConnection") ?? 
+                    throw new InvalidOperationException("DefaultConnection is required for health checks but not configured."),
+                name: "database")
+            .AddRedis(configuration.GetConnectionString("Redis") ?? "localhost:6379",
+                name: "redis_cache");
 
         return services;
     }

@@ -8,6 +8,11 @@ namespace AutoDocOps.Tests.Projects.Commands;
 
 public class CreateProjectHandlerTests
 {
+    private const string TestProjectName = "Test Project";
+    private const string TestProjectDescription = "Test Description";  
+    private const string TestRepositoryUrl = "https://github.com/test/repo";
+    private const string TestBranch = "main";
+    
     private readonly Mock<IProjectRepository> _mockProjectRepository;
     private readonly CreateProjectHandler _handler;
 
@@ -17,15 +22,15 @@ public class CreateProjectHandlerTests
         _handler = new CreateProjectHandler(_mockProjectRepository.Object);
     }
 
-    [Fact]
+    [Fact(Timeout = 2000)]
     public async Task Handle_ValidCommand_ReturnsCreateProjectResponse()
     {
         // Arrange
         var command = new CreateProjectCommand(
-            "Test Project",
-            "Test Description",
-            "https://github.com/test/repo",
-            "main",
+            TestProjectName,
+            TestProjectDescription,
+            TestRepositoryUrl,
+            TestBranch,
             Guid.NewGuid(),
             Guid.NewGuid()
         );
@@ -66,15 +71,15 @@ public class CreateProjectHandlerTests
             Times.Once);
     }
 
-    [Fact]
+    [Fact(Timeout = 2000)]
     public async Task Handle_ValidCommand_CreatesProjectWithCorrectProperties()
     {
         // Arrange
         var command = new CreateProjectCommand(
-            "Test Project",
-            "Test Description",
-            "https://github.com/test/repo",
-            "develop",
+            TestProjectName,
+            TestProjectDescription,
+            TestRepositoryUrl,
+            TestBranch,
             Guid.NewGuid(),
             Guid.NewGuid()
         );

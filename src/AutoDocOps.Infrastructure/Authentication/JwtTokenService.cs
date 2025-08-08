@@ -92,7 +92,7 @@ public class JwtTokenService : IJwtTokenService
         }
     }
 
-    public bool ValidateRefreshToken(string refreshToken)
+    public async Task<bool> ValidateRefreshTokenAsync(string refreshToken)
     {
         // Validate against stored refresh tokens
         if (string.IsNullOrWhiteSpace(refreshToken))
@@ -112,7 +112,7 @@ public class JwtTokenService : IJwtTokenService
         // If refresh token store is available, validate against stored tokens
         if (_refreshTokenStore != null)
         {
-            return _refreshTokenStore.IsValidRefreshTokenAsync(refreshToken).GetAwaiter().GetResult();
+            return await _refreshTokenStore.IsValidRefreshTokenAsync(refreshToken);
         }
 
         // Fallback: basic validation for development/testing

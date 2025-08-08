@@ -20,7 +20,7 @@ public class GetProjectHandlerTests
         _handler = new GetProjectHandler(_mockProjectRepository.Object, _mockCacheService.Object);
     }
 
-    [Fact]
+    [Fact(Timeout = 2000)]
     public async Task Handle_ValidProjectId_ReturnsProjectResponse()
     {
         // Arrange
@@ -62,7 +62,7 @@ public class GetProjectHandlerTests
         Assert.True(result.Project.IsActive);
     }
 
-    [Fact]
+    [Fact(Timeout = 2000)]
     public async Task Handle_ProjectNotFound_ThrowsArgumentException()
     {
         // Arrange

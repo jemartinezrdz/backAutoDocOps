@@ -84,8 +84,29 @@ test:
 
 # Run tests with coverage
 test-coverage:
-	@echo "Running tests with coverage..."
-	dotnet test tests/AutoDocOps.Tests --collect:"XPlat Code Coverage" --logger "console;verbosity=normal"
+	@echo "Running tests with coverage (OpenCover + JSON) ..."
+	dotnet test --no-build --configuration Release \
+		/p:CollectCoverage=true \
+		/p:CoverletOutputFormat=opencover,json \
+		/p:CoverletOutput=tests/TestResults/coverage/ \
+		/p:Threshold=80 \
+		/p:ThresholdType=line \
+		/p:ThresholdStat=total \
+		--settings tests/AutoDocOps.Tests/AutoDocOps.runsettings \
+		--logger "console;verbosity=minimal"
+	@echo "Normalizing coverage report path..."
+	@LAST_FILE=$$(ls -1t tests/AutoDocOps.Tests/TestResults/*/coverage.opencover.xml | head -1); \
+		mkdir -p tests/TestResults/coverage && cp $$LAST_FILE tests/TestResults/coverage/coverage.opencover.xml; \
+		echo "Using $$LAST_FILE as source coverage file";
+	@echo "Generating HTML coverage report..."
+	dotnet tool run reportgenerator -reports:tests/TestResults/coverage/coverage.opencover.xml -targetdir:tests/TestResults/report -reporttypes:HtmlSummary
+	@echo "HTML summary at tests/TestResults/report/index.html"
+
+test-coverage-html: test-coverage ## Alias
+
+test-fast:
+	@echo "Running tests (minimal output)..."
+	dotnet test --no-build --configuration Debug --settings tests/AutoDocOps.Tests/AutoDocOps.runsettings --logger "console;verbosity=minimal"
 
 # Clean build artifacts
 clean:

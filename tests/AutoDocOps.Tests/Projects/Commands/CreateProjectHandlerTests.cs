@@ -22,7 +22,7 @@ public class CreateProjectHandlerTests
         _handler = new CreateProjectHandler(_mockProjectRepository.Object);
     }
 
-    [Fact]
+    [Fact(Timeout = 2000)]
     public async Task Handle_ValidCommand_ReturnsCreateProjectResponse()
     {
         // Arrange
@@ -71,7 +71,7 @@ public class CreateProjectHandlerTests
             Times.Once);
     }
 
-    [Fact]
+    [Fact(Timeout = 2000)]
     public async Task Handle_ValidCommand_CreatesProjectWithCorrectProperties()
     {
         // Arrange

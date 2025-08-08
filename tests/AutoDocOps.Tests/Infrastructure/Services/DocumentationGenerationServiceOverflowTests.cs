@@ -73,15 +73,18 @@ public class DocumentationGenerationServiceOverflowTests
     }
 
     [Fact]
-    public void BackoffHelper_CheckedArithmetic_ThrowsOverflowOnLargeValues()
+    public void BackoffHelper_CheckedArithmetic_OnOverflow_ReturnsMax()
     {
-        // Arrange - Use a value that will cause overflow when doubled in checked arithmetic
-        var nearMaxTicks = long.MaxValue / 2 + 1000; // This will overflow when doubled
+        // Arrange - value chosen to overflow when doubled
+        var nearMaxTicks = long.MaxValue / 2 + 1000; 
         var largeDelay = new TimeSpan(nearMaxTicks);
-        var maxDelay = TimeSpan.FromDays(365); // Large max to ensure we hit overflow, not max limit
+        var maxDelay = TimeSpan.FromDays(365);
 
-        // Act & Assert - Should throw OverflowException due to checked arithmetic
-        Assert.Throws<OverflowException>(() => BackoffHelper.NextDelay(largeDelay, maxDelay));
+        // Act
+        var result = BackoffHelper.NextDelay(largeDelay, maxDelay);
+
+        // Assert - Implementation captura OverflowException y retorna max
+        Assert.Equal(maxDelay, result);
     }
 
     [Fact]

@@ -38,7 +38,7 @@ public class DocumentationGenerationServiceOverflowTests
     [InlineData(60000, 3600000)] // 1 min → max 60 min
     [InlineData(1000, 10000)] // 1 sec → max 10 sec
     [InlineData(30000, 120000)] // 30 sec → max 2 min
-    public void BackoffHelper_IsBounded_WithVariousDelays(long startMs, long maxMs)
+    public void BackoffHelperIsBoundedWithVariousDelays(long startMs, long maxMs)
     {
         // Arrange
         var current = TimeSpan.FromMilliseconds(startMs);
@@ -59,7 +59,7 @@ public class DocumentationGenerationServiceOverflowTests
     }
 
     [Fact]
-    public void BackoffHelper_HandlesOverflow_GracefullyReturnsMax()
+    public void BackoffHelperHandlesOverflowGracefullyReturnsMax()
     {
         // Arrange - Use TimeSpan.MaxValue which when doubled will definitely overflow
         var largeDelay = TimeSpan.MaxValue;
@@ -75,11 +75,11 @@ public class DocumentationGenerationServiceOverflowTests
     private const long OverflowTriggerOffsetTicks = 1000;
 
     [Fact]
-    public void BackoffHelper_CheckedArithmetic_OnOverflow_ReturnsMax()
+    public void BackoffHelperCheckedArithmeticOnOverflowReturnsMax()
     {
         // Arrange - value chosen to overflow when doubled
-        var nearMaxTicks = long.MaxValue / 2 + OverflowTriggerOffsetTicks;
-        var largeDelay = new TimeSpan(nearMaxTicks);
+    var overflowProneValueTicks = checked(long.MaxValue / 2 + OverflowTriggerOffsetTicks);
+    var largeDelay = new TimeSpan(overflowProneValueTicks);
         var maxDelay = TimeSpan.FromDays(365);
 
         // Act
@@ -90,7 +90,19 @@ public class DocumentationGenerationServiceOverflowTests
     }
 
     [Fact]
-    public void BackoffHelper_WithNormalValues_DoublesCorrectly()
+    public void BackoffHelperCheckedArithmeticThrowsOnTrueOverflow()
+    {
+        // Complementary test: force an actual overflow using checked arithmetic before constructing TimeSpan
+        Assert.Throws<OverflowException>(() =>
+        {
+            var half = long.MaxValue / 2;
+            var sum = checked(half + half + 1000); // this will overflow
+            _ = new TimeSpan(sum);
+        });
+    }
+
+    [Fact]
+    public void BackoffHelperWithNormalValuesDoublesCorrectly()
     {
         // Arrange
         var initial = TimeSpan.FromSeconds(1);
@@ -106,10 +118,10 @@ public class DocumentationGenerationServiceOverflowTests
     }
 
     [Fact]
-    public void ExponentialBackoff_RespectsMaximumDelay()
+    public void ExponentialBackoffRespectsMaximumDelay()
     {
         // Arrange
-        var service = new DocumentationGenerationService(_mockScopeFactory.Object, _mockLogger.Object, _mockOptions.Object);
+        using var service = new DocumentationGenerationService(_mockScopeFactory.Object, _mockLogger.Object, _mockOptions.Object);
         
         var currentRetryDelayField = typeof(DocumentationGenerationService)
             .GetField("_currentRetryDelay", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
@@ -134,10 +146,10 @@ public class DocumentationGenerationServiceOverflowTests
     [InlineData(1)] // 1 minute
     [InlineData(5)] // 5 minutes  
     [InlineData(30)] // 30 minutes
-    public void ExponentialBackoff_WithVariousInitialDelays_DoesNotOverflow(int initialMinutes)
+    public void ExponentialBackoffWithVariousInitialDelaysDoesNotOverflow(int initialMinutes)
     {
         // Arrange
-        var service = new DocumentationGenerationService(_mockScopeFactory.Object, _mockLogger.Object, _mockOptions.Object);
+        using var service = new DocumentationGenerationService(_mockScopeFactory.Object, _mockLogger.Object, _mockOptions.Object);
         
         var currentRetryDelayField = typeof(DocumentationGenerationService)
             .GetField("_currentRetryDelay", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
@@ -164,7 +176,7 @@ public class DocumentationGenerationServiceOverflowTests
     }
 
     [Fact]
-    public void ExponentialBackoff_WithTotalMilliseconds_IsSaferThanTicks()
+    public void ExponentialBackoffWithTotalMillisecondsIsSaferThanTicks()
     {
         // Arrange - Test the safety of TotalMilliseconds vs Ticks approach
         var initialDelay = TimeSpan.FromMinutes(30);
@@ -185,7 +197,7 @@ public class DocumentationGenerationServiceOverflowTests
     }
 
     [Fact]
-    public void ExponentialBackoff_HandlesEdgeCases()
+    public void ExponentialBackoffHandlesEdgeCases()
     {
         // Test with zero delay
         var zeroDelay = TimeSpan.Zero;

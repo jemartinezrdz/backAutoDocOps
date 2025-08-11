@@ -2,18 +2,31 @@ using AutoDocOps.Application.Projects.Commands.CreateProject;
 using AutoDocOps.Application.Common.Interfaces;
 using AutoDocOps.Application.Common.Profiles;
 using AutoDocOps.Application.Authentication.Models;
-using AutoDocOps.Application.Common.Models;
+using AutoDocOps.Domain.Enums;
+using AutoDocOps.Application.Common.Models; // For DbSettings
 using AutoDocOps.Infrastructure;
 using AutoDocOps.WebAPI.Models;
 using AutoDocOps.WebAPI.Controllers;
 using Asp.Versioning;
 using Asp.Versioning.ApiExplorer;
+using ApiVersionAsp = Asp.Versioning.ApiVersion;
 using Microsoft.OpenApi.Models;
 using Stripe;
 using System.Reflection;
 using System.Text;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
+using System.Buffers;
+using System.Diagnostics;
+using System.IO.Pipelines;
+using System.Diagnostics.Metrics;
+using AutoDocOps.WebAPI.Monitoring;
+using Microsoft.AspNetCore.Mvc;
+using OpenTelemetry;
+using OpenTelemetry.Metrics;
+// Prometheus exporter paquete removido temporalmente hasta fijar versión estable
+using OpenTelemetry.Instrumentation.Http;
+using AutoDocOps.Application.Common.Constants;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -43,7 +56,7 @@ builder.Services.AddOptions<DbSettings>()
 // Add API versioning
 builder.Services.AddApiVersioning(opt =>
 {
-    opt.DefaultApiVersion = new ApiVersion(1, 0);
+    opt.DefaultApiVersion = new ApiVersionAsp(1, 0);
     opt.AssumeDefaultVersionWhenUnspecified = true;
     opt.ApiVersionReader = ApiVersionReader.Combine(
         new UrlSegmentApiVersionReader(),
@@ -132,18 +145,28 @@ builder.Services.AddSession(options =>
 // Add health checks
 builder.Services.AddHealthChecks();
 
-// Add rate limiting for webhooks
+// Request timeouts + rate limiting (token bucket) para webhooks
+builder.Services.AddRequestTimeouts();
 builder.Services.AddRateLimiter(options =>
 {
-    options.AddPolicy("stripe", ctx =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            factory: _ => new FixedWindowRateLimiterOptions
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (context, token) =>
+    {
+        // Provide minimal Retry-After hint (seconds) using one replenishment period heuristic
+        context.HttpContext.Response.Headers["Retry-After"] = "1";
+        return ValueTask.CompletedTask;
+    };
+    options.AddPolicy("stripe-webhook", ctx =>
+        RateLimitPartition.GetTokenBucketLimiter(
+            partitionKey: PartitionKey(ctx),
+            factory: _ => new TokenBucketRateLimiterOptions
             {
-                PermitLimit = 30,
-                Window = TimeSpan.FromMinutes(1),
+                TokenLimit = 10,
+                TokensPerPeriod = 5,
+                ReplenishmentPeriod = TimeSpan.FromSeconds(1),
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                QueueLimit = 5
+                QueueLimit = 0,
+                AutoReplenishment = true
             }));
 });
 
@@ -151,6 +174,34 @@ builder.Services.AddRateLimiter(options =>
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
+
+// Stripe settings (fail-fast validation later once we have env + config resolved)
+builder.Services.AddOptions<StripeSettings>()
+    .Bind(builder.Configuration.GetSection("Stripe"))
+    .Validate(s => !string.IsNullOrWhiteSpace(s.WebhookSecret) || !builder.Environment.IsProduction(), "Stripe WebhookSecret is required in Production.")
+    .ValidateOnStart();
+
+// Metrics class moved to separate file for analyzer compatibility
+builder.Services.AddOpenTelemetry()
+    .WithMetrics(m =>
+    {
+        m.AddAspNetCoreInstrumentation();
+        m.AddHttpClientInstrumentation();
+        m.AddMeter("AutoDocOps.Webhook");
+        m.AddMeter("AutoDocOps.Billing");
+        // Buckets orientativos para p95 (segundos)
+        m.AddView("stripe_webhook_latency_seconds", new ExplicitBucketHistogramConfiguration
+        {
+            Boundaries = new double[] { 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10 }
+        });
+        // Optional: custom buckets for billing operations (short operations expected)
+        m.AddView("billing_operation_latency_seconds", new ExplicitBucketHistogramConfiguration
+        {
+            Boundaries = new double[] { 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2 }
+        });
+        // OTLP exporter (Option 1) - endpoint can be overridden by OTEL_EXPORTER_OTLP_ENDPOINT env var
+        m.AddOtlpExporter();
+    });
 
 var app = builder.Build();
 
@@ -177,7 +228,7 @@ app.Use(async (context, next) =>
     context.Response.Headers["X-Frame-Options"] = "DENY";
     context.Response.Headers["X-XSS-Protection"] = "1; mode=block";
     context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
-    await next();
+    await next().ConfigureAwait(false);
 });
 
 app.UseCors();
@@ -192,10 +243,21 @@ app.UseSession();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Stripe webhook endpoint with security enhancements
+// Stripe webhook endpoints (legacy + canonical) endurecidos
 app.MapPost("/billing/stripe-webhook", HandleStripeWebhookAsync)
-    .RequireRateLimiting("stripe")
     .Accepts<string>("application/json")
+    .RequireRateLimiting("stripe-webhook")
+    .WithRequestTimeout(TimeSpan.FromSeconds(5))
+    .WithMetadata(new RequestSizeLimitAttribute(256 * 1024))
+    .WithName("StripeWebhookLegacy")
+    .WithTags("Billing")
+    .AllowAnonymous();
+
+app.MapPost("/stripe/webhook", HandleStripeWebhookAsync)
+    .Accepts<string>("application/json")
+    .RequireRateLimiting("stripe-webhook")
+    .WithRequestTimeout(TimeSpan.FromSeconds(5))
+    .WithMetadata(new RequestSizeLimitAttribute(256 * 1024))
     .WithName("StripeWebhook")
     .WithTags("Billing")
     .AllowAnonymous();
@@ -206,82 +268,182 @@ static async Task<IResult> HandleStripeWebhookAsync(
     ILogger<Program> logger,
     IConfiguration config,
     IBillingService billingService,
-    CancellationToken cancellationToken = default)
+    ISecretSourceProvider secretSourceProvider,
+    IBillingAuditService billingAudit,
+    CancellationToken parentToken = default)
 {
-    const int MaxBodyBytes = 256 * 1024; // 256 KB limit
+    const int MaxBodyBytes = 256 * 1024; // 256 KiB hard limit
+    var ct = parentToken; // Timeout ahora via middleware WithRequestTimeout
 
-    // Validate content type
+    var sw = Stopwatch.StartNew();
+    // No contamos "started" para mantener solo ok|fail
+
+    // Content-Type validation early
     if (!request.ContentType?.StartsWith("application/json", StringComparison.OrdinalIgnoreCase) ?? true)
     {
-        return Results.BadRequest("Content-Type must be application/json");
+        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.UnsupportedMedia));
+        WebhookMetrics.Requests.Add(1,
+            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
+            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.UnsupportedMedia));
+        return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
     }
 
-    // Read body with size limit using a pooled buffer to avoid large allocations.
-    string json;
-    var rentedBuffer = System.Buffers.ArrayPool<byte>.Shared.Rent(MaxBodyBytes);
-    try
+    // Read body with streaming pipe reader and size guard
+    var (ok, body, tooLarge) = await ReadBodyAtMostAsync(request, MaxBodyBytes, ct).ConfigureAwait(false);
+    if (tooLarge)
     {
-        int totalRead = 0;
-        int bytesRead;
-        var bufferMemory = new Memory<byte>(rentedBuffer);
-
-    while (totalRead < MaxBodyBytes && (bytesRead = await request.Body.ReadAsync(bufferMemory.Slice(totalRead), cancellationToken).ConfigureAwait(false)) > 0)
-        {
-            totalRead += bytesRead;
-        }
-
-        // Check if there's still more data in the request body, which means it's too large.
-        if (totalRead == MaxBodyBytes)
-        {
-            if (await request.Body.ReadAsync(new byte[1], 0, 1, cancellationToken).ConfigureAwait(false) > 0)
-            {
-                return Results.BadRequest("Request body too large");
-            }
-        }
-
-        json = Encoding.UTF8.GetString(rentedBuffer, 0, totalRead);
+        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.TooLarge));
+        WebhookMetrics.Requests.Add(1,
+            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
+            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.TooLarge));
+        return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
     }
-    finally
+    if (!ok)
     {
-        System.Buffers.ArrayPool<byte>.Shared.Return(rentedBuffer);
+        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Empty));
+        WebhookMetrics.Requests.Add(1,
+            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
+            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Empty));
+        return Results.BadRequest("Invalid or empty payload.");
     }
-    
-    // Validate Stripe signature
+
+    // Signature header
     var stripeSignature = request.Headers["Stripe-Signature"].FirstOrDefault();
-    if (string.IsNullOrEmpty(stripeSignature))
+    if (string.IsNullOrWhiteSpace(stripeSignature))
     {
+        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Signature));
+        WebhookMetrics.Requests.Add(1,
+            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
+            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Signature));
         return Results.BadRequest("Missing Stripe signature");
     }
 
-    var webhookSecret = Environment.GetEnvironmentVariable("STRIPE_WEBHOOK_SECRET")
-        ?? config["Stripe:WebhookSecret"];
-    
+    var envSecret = Environment.GetEnvironmentVariable("STRIPE_WEBHOOK_SECRET");
+    var configSecret = config["Stripe:WebhookSecret"];
+    var webhookSecret = envSecret ?? configSecret;
     if (string.IsNullOrWhiteSpace(webhookSecret))
     {
         logger.StripeWebhookSecretNotConfigured();
-        return Results.Problem("Webhook secret not configured", statusCode: 500);
+        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Other));
+        WebhookMetrics.Requests.Add(1,
+            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
+            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Other));
+        return Results.Problem("Webhook secret not configured", statusCode: StatusCodes.Status500InternalServerError);
+    }
+    if (envSecret is null && request.HttpContext.RequestServices.GetRequiredService<IHostEnvironment>().IsProduction())
+    {
+        logger.UsingConfigStripeSecret();
     }
 
     Event stripeEvent;
     try
     {
-        stripeEvent = EventUtility.ConstructEvent(json, stripeSignature, webhookSecret, throwOnApiVersionMismatch: false);
+        stripeEvent = EventUtility.ConstructEvent(body, stripeSignature, webhookSecret, throwOnApiVersionMismatch: false);
     }
     catch (Exception ex)
     {
         logger.InvalidStripeWebhookSignature(ex);
+        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Signature));
+        WebhookMetrics.Requests.Add(1,
+            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
+            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Signature));
         return Results.BadRequest("Invalid signature");
     }
 
     try
     {
-    await billingService.HandleAsync(stripeEvent, cancellationToken).ConfigureAwait(false);
+        await billingService.HandleAsync(stripeEvent, ct).ConfigureAwait(false);
+
+        // Auditoría degradable: no romper si falla
+        try
+        {
+            await billingAudit.LogAsync(stripeEvent.Type, secretSourceProvider.WebhookSecretSource, sw.Elapsed.TotalMilliseconds, ct).ConfigureAwait(false);
+            logger.StripeAuditLogged(stripeEvent.Type, secretSourceProvider.WebhookSecretSource.ToString());
+        }
+        catch (Exception ex)
+        {
+            logger.StripeAuditLogFailed(stripeEvent.Type, ex.Message);
+        }
+
+        WebhookMetrics.Requests.Add(1,
+            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Ok));
         return Results.Ok();
+    }
+    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+    {
+        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Timeout));
+        WebhookMetrics.Requests.Add(1,
+            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
+            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Timeout));
+        return Results.StatusCode(StatusCodes.Status504GatewayTimeout);
     }
     catch (Exception ex)
     {
         logger.ErrorProcessingStripeWebhook(stripeEvent.Type, ex);
-        return Results.StatusCode(500);
+        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Other));
+        WebhookMetrics.Requests.Add(1,
+            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
+            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Other));
+        return Results.StatusCode(StatusCodes.Status500InternalServerError);
+    }
+    finally
+    {
+        sw.Stop();
+    WebhookMetrics.LatencySeconds.Record(sw.Elapsed.TotalSeconds);
+    }
+}
+
+// Efficient bounded body reader using PipeReader and ArrayPool
+static async Task<(bool ok, string body, bool tooLarge)> ReadBodyAtMostAsync(HttpRequest request, int maxBytes, CancellationToken ct)
+{
+    var reader = request.BodyReader;
+    var total = 0;
+    var rented = ArrayPool<byte>.Shared.Rent(maxBytes);
+    try
+    {
+        while (true)
+        {
+            var result = await reader.ReadAsync(ct).ConfigureAwait(false);
+            var buffer = result.Buffer;
+            foreach (var segment in buffer)
+            {
+                var len = (int)segment.Length;
+                if (len == 0)
+                {
+                    continue;
+                }
+                if (total + len > maxBytes)
+                {
+                    var remaining = maxBytes - total;
+                    if (remaining > 0)
+                    {
+                        segment.Span.Slice(0, remaining).CopyTo(rented.AsSpan(total, remaining));
+                    }
+                    return (false, string.Empty, true);
+                }
+                segment.Span.CopyTo(rented.AsSpan(total, len));
+                total += len;
+            }
+            reader.AdvanceTo(buffer.End);
+            if (result.IsCompleted)
+            {
+                break;
+            }
+            if (ct.IsCancellationRequested)
+            {
+                return (false, string.Empty, false);
+            }
+        }
+        if (total == 0)
+        {
+            return (false, string.Empty, false);
+        }
+        var body = Encoding.UTF8.GetString(rented, 0, total);
+        return (true, body, false);
+    }
+    finally
+    {
+        ArrayPool<byte>.Shared.Return(rented);
     }
 }
 
@@ -328,6 +490,16 @@ app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthC
 
 app.MapHealthChecks("/health/ready"); // Full readiness check
 
+// Conditional metrics scrape endpoint (legacy Prometheus) behind feature flag
+var scrapeEnabled = Environment.GetEnvironmentVariable("METRICS_SCRAPE_ENABLED")?.ToLowerInvariant() == "true";
+if (scrapeEnabled)
+{
+    // Lightweight manual exposition placeholder (could integrate OpenTelemetry.Extensions.Prometheus when re-added)
+    app.MapGet("/metrics", () => Results.Content("# Metrics exposed via OTLP Collector. Enable Prometheus exporter package for rich scrape.", "text/plain"))
+       .WithTags("Metrics")
+       .AllowAnonymous();
+}
+
 // API info endpoint
 app.MapGet("/", () => new
 {
@@ -345,4 +517,30 @@ var logger = app.Services.GetRequiredService<ILogger<Program>>();
 logger.ApiStarting(app.Environment.EnvironmentName);
 logger.AvailableEndpoints();
 
+// Fail-fast secret validation (additional runtime guard beyond options)
+var envSecretCheck = Environment.GetEnvironmentVariable("STRIPE_WEBHOOK_SECRET");
+var configSecretCheck = app.Configuration["Stripe:WebhookSecret"];
+if (app.Environment.IsProduction())
+{
+    if (string.IsNullOrWhiteSpace(envSecretCheck) && !string.IsNullOrWhiteSpace(configSecretCheck))
+    {
+        logger.UsingConfigStripeSecret();
+    }
+    if (string.IsNullOrWhiteSpace(envSecretCheck) && string.IsNullOrWhiteSpace(configSecretCheck))
+    {
+        logger.StripeWebhookSecretNotConfigured();
+        throw new InvalidOperationException("Missing STRIPE_WEBHOOK_SECRET in Production.");
+    }
+}
+
 await app.RunAsync().ConfigureAwait(false);
+
+// Helper para particionar rate limiting
+static string PartitionKey(HttpContext ctx)
+{
+    if (ctx.Request.Headers.TryGetValue("Stripe-Signature", out var sig) && !Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(sig))
+    {
+        return "sig:" + sig.ToString().Split(',')[0];
+    }
+    return "ip:" + ctx.Connection.RemoteIpAddress;
+}

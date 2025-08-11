@@ -15,7 +15,8 @@ public class GetGenerationStatusHandler : IRequestHandler<GetGenerationStatusQue
 
     public async Task<GetGenerationStatusResponse> Handle(GetGenerationStatusQuery request, CancellationToken cancellationToken)
     {
-        var passport = await _passportRepository.GetByIdAsync(request.PassportId, cancellationToken);
+    ArgumentNullException.ThrowIfNull(request);
+    var passport = await _passportRepository.GetByIdAsync(request.PassportId, cancellationToken).ConfigureAwait(false);
         
         if (passport == null)
         {

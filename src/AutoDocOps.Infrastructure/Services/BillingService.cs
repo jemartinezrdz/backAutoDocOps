@@ -7,6 +7,10 @@ using Stripe.Checkout;
 using StripeSubscription = Stripe.Subscription;
 using System.Security.Cryptography;
 using System.Text;
+using AutoDocOps.Infrastructure.Logging;
+using AutoDocOps.Infrastructure.Monitoring;
+using AutoDocOps.Application.Common.Constants;
+using System.Diagnostics;
 
 namespace AutoDocOps.Infrastructure.Services;
 
@@ -14,14 +18,16 @@ public class BillingService : IBillingService
 {
     private readonly ILogger<BillingService> _logger;
     private readonly IConfiguration _configuration;
-    private readonly string _stripeApiKey;
+    private readonly StripeClient _stripeClient;
 
-    public BillingService(ILogger<BillingService> logger, IConfiguration configuration)
+    public BillingService(ILogger<BillingService> logger, IConfiguration configuration, StripeClient stripeClient)
     {
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(stripeClient);
         _logger = logger;
         _configuration = configuration;
-        _stripeApiKey = _configuration["Stripe:SecretKey"] 
-            ?? throw new InvalidOperationException("Stripe SecretKey is not configured");
+        _stripeClient = stripeClient;
     }
 
     /// <summary>
@@ -36,41 +42,54 @@ public class BillingService : IBillingService
 
     public async Task HandleAsync(Event stripeEvent, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(stripeEvent);
+        var sw = Stopwatch.StartNew();
+        var result = MetricTags.Ok;
         try
         {
-            _logger.LogInformation("Processing Stripe event: {EventType} with ID: {EventId}", 
-                stripeEvent.Type, stripeEvent.Id);
+            _logger.ProcessingStripeEvent(stripeEvent.Type, stripeEvent.Id);
 
             switch (stripeEvent.Type)
             {
                 case "checkout.session.completed":
-                    await HandleCheckoutSessionCompleted(stripeEvent, cancellationToken);
+            await HandleCheckoutSessionCompleted(stripeEvent, cancellationToken).ConfigureAwait(false);
                     break;
                 
                 case "invoice.payment_succeeded":
-                    await HandleInvoicePaymentSucceeded(stripeEvent, cancellationToken);
+            await HandleInvoicePaymentSucceeded(stripeEvent, cancellationToken).ConfigureAwait(false);
                     break;
                 
                 case "customer.subscription.deleted":
-                    await HandleSubscriptionDeleted(stripeEvent, cancellationToken);
+            await HandleSubscriptionDeleted(stripeEvent, cancellationToken).ConfigureAwait(false);
                     break;
                 
                 default:
-                    _logger.LogInformation("Unhandled event type: {EventType}", stripeEvent.Type);
+            _logger.UnhandledStripeEventType(stripeEvent.Type);
                     break;
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing Stripe event: {EventType} with ID: {EventId}", 
-                stripeEvent.Type, stripeEvent.Id);
+            result = MetricTags.Fail;
+            _logger.ErrorProcessingStripeEventDetailed(stripeEvent.Type, stripeEvent.Id, ex);
             throw;
+        }
+        finally
+        {
+            sw.Stop();
+            BillingMetrics.Operations.Add(1, new KeyValuePair<string, object?>(MetricTags.Op, MetricTags.BillingOps.HandleEvent), new KeyValuePair<string, object?>(MetricTags.Result, result));
+            BillingMetrics.OperationLatencySeconds.Record(sw.Elapsed.TotalSeconds, new KeyValuePair<string, object?>(MetricTags.Op, MetricTags.BillingOps.HandleEvent), new KeyValuePair<string, object?>(MetricTags.Result, result));
         }
     }
 
     public async Task<string> CreateCheckoutSessionAsync(Guid organizationId, string planId, 
         string successUrl, string cancelUrl, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(planId);
+        ArgumentNullException.ThrowIfNull(successUrl);
+        ArgumentNullException.ThrowIfNull(cancelUrl);
+        var sw = Stopwatch.StartNew();
+        var result = MetricTags.Ok;
         try
         {
             var options = new SessionCreateOptions
@@ -94,47 +113,62 @@ public class BillingService : IBillingService
                 }
             };
 
-            var service = new SessionService(new StripeClient(_stripeApiKey));
-            var session = await service.CreateAsync(options, cancellationToken: cancellationToken);
+            var service = new SessionService(_stripeClient);
+            var session = await service.CreateAsync(options, cancellationToken: cancellationToken).ConfigureAwait(false);
             
-            _logger.LogInformation("Created checkout session {SessionId} for anonymized org {AnonymizedOrgId}", 
-                session.Id, AnonymizeOrganizationId(organizationId));
+            _logger.CreatedCheckoutSession(session.Id, AnonymizeOrganizationId(organizationId));
             
             return session.Url;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating checkout session for anonymized org {AnonymizedOrgId}", AnonymizeOrganizationId(organizationId));
+            result = MetricTags.Fail;
+            _logger.ErrorCreatingCheckoutSession(AnonymizeOrganizationId(organizationId), ex);
             throw;
+        }
+        finally
+        {
+            sw.Stop();
+            BillingMetrics.Operations.Add(1, new KeyValuePair<string, object?>(MetricTags.Op, MetricTags.BillingOps.CreateCheckout), new KeyValuePair<string, object?>(MetricTags.Result, result));
+            BillingMetrics.OperationLatencySeconds.Record(sw.Elapsed.TotalSeconds, new KeyValuePair<string, object?>(MetricTags.Op, MetricTags.BillingOps.CreateCheckout), new KeyValuePair<string, object?>(MetricTags.Result, result));
         }
     }
 
     public async Task<bool> CancelSubscriptionAsync(Guid organizationId, CancellationToken cancellationToken = default)
     {
+        var sw = Stopwatch.StartNew();
+        var result = MetricTags.Ok;
         try
         {
             // TODO: Lookup subscription in database for the given organization
             // Placeholder: Assume we have a method GetSubscriptionIdForOrganization
-            string? subscriptionId = await GetSubscriptionIdForOrganization(organizationId, cancellationToken);
+            string? subscriptionId = await GetSubscriptionIdForOrganization(organizationId, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrEmpty(subscriptionId))
             {
-                _logger.LogWarning("No subscription found for anonymized org {AnonymizedOrgId}", AnonymizeOrganizationId(organizationId));
+                _logger.NoSubscriptionFound(AnonymizeOrganizationId(organizationId));
                 return false;
             }
 
-            var subscriptionService = new SubscriptionService(new StripeClient(_stripeApiKey));
-            var canceledSubscription = await subscriptionService.CancelAsync(subscriptionId, null, cancellationToken: cancellationToken);
+            var subscriptionService = new SubscriptionService(_stripeClient);
+            var canceledSubscription = await subscriptionService.CancelAsync(subscriptionId, null, cancellationToken: cancellationToken).ConfigureAwait(false);
 
             // TODO: Update subscription status in database
-            await UpdateSubscriptionStatus(organizationId, canceledSubscription.Id, "canceled", cancellationToken);
+            await UpdateSubscriptionStatus(organizationId, canceledSubscription.Id, "canceled", cancellationToken).ConfigureAwait(false);
 
-            _logger.LogInformation("Canceled subscription {SubscriptionId} for anonymized org {AnonymizedOrgId}", canceledSubscription.Id, AnonymizeOrganizationId(organizationId));
+            _logger.CanceledSubscription(canceledSubscription.Id, AnonymizeOrganizationId(organizationId));
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error canceling subscription for anonymized org {AnonymizedOrgId}", AnonymizeOrganizationId(organizationId));
+            result = MetricTags.Fail;
+            _logger.ErrorCancelingSubscription(AnonymizeOrganizationId(organizationId), ex);
             return false;
+        }
+        finally
+        {
+            sw.Stop();
+            BillingMetrics.Operations.Add(1, new KeyValuePair<string, object?>(MetricTags.Op, MetricTags.BillingOps.CancelSubscription), new KeyValuePair<string, object?>(MetricTags.Result, result));
+            BillingMetrics.OperationLatencySeconds.Record(sw.Elapsed.TotalSeconds, new KeyValuePair<string, object?>(MetricTags.Op, MetricTags.BillingOps.CancelSubscription), new KeyValuePair<string, object?>(MetricTags.Result, result));
         }
     }
 
@@ -142,11 +176,9 @@ public class BillingService : IBillingService
     private async Task<string?> GetSubscriptionIdForOrganization(Guid organizationId, CancellationToken cancellationToken)
     {
         // TODO (issue #123): Replace with actual repository query.
-        _logger.LogWarning(
-            "GetSubscriptionIdForOrganization called for anonymized org {AnonymizedOrgId} without database implementation",
-            AnonymizeOrganizationId(organizationId));
+        _logger.GetSubscriptionIdPlaceholder(AnonymizeOrganizationId(organizationId));
 
-        await Task.CompletedTask;
+    await Task.CompletedTask.ConfigureAwait(false);
         return null; // Forces 'no subscription found' flow
     }
 
@@ -154,56 +186,63 @@ public class BillingService : IBillingService
     private async Task UpdateSubscriptionStatus(Guid organizationId, string subscriptionId, string status, CancellationToken cancellationToken)
     {
         // TODO (issue #124): Implement actual database persistence.
-        _logger.LogInformation(
-            "Mock subscription status update: Anonymized org {AnonymizedOrgId}, Subscription {SubscriptionId} => {Status}",
-            AnonymizeOrganizationId(organizationId), subscriptionId, status);
+        _logger.MockSubscriptionStatusUpdate(AnonymizeOrganizationId(organizationId), subscriptionId, status);
 
-        await Task.CompletedTask;
+    await Task.CompletedTask.ConfigureAwait(false);
     }
 
     private async Task HandleCheckoutSessionCompleted(Event stripeEvent, CancellationToken cancellationToken)
     {
         var session = stripeEvent.Data.Object as Session;
-        if (session == null) return;
+        if (session == null)
+        {
+            return;
+        }
 
-        _logger.LogInformation("Checkout session completed: {SessionId}", session.Id);
+        _logger.CheckoutSessionCompleted(session.Id);
         
         // Extract organization ID from metadata
         if (session.Metadata.TryGetValue("organization_id", out var orgIdString) && 
             Guid.TryParse(orgIdString, out var organizationId))
         {
             // TODO: Create or update subscription in database
-            _logger.LogInformation("Creating subscription for anonymized org {AnonymizedOrgId}", AnonymizeOrganizationId(organizationId));
+            _logger.CreatingSubscriptionForOrg(AnonymizeOrganizationId(organizationId));
         }
         
-        await Task.CompletedTask;
+    await Task.CompletedTask.ConfigureAwait(false);
     }
 
     private async Task HandleInvoicePaymentSucceeded(Event stripeEvent, CancellationToken cancellationToken)
     {
         var invoice = stripeEvent.Data.Object as Invoice;
-        if (invoice == null) return;
+        if (invoice == null)
+        {
+            return;
+        }
 
-        _logger.LogInformation("Invoice payment succeeded: {InvoiceId}", invoice.Id);
+        _logger.InvoicePaymentSucceeded(invoice.Id);
         
         // TODO: Update subscription status in database
-        await Task.CompletedTask;
+    await Task.CompletedTask.ConfigureAwait(false);
     }
 
     private async Task HandleSubscriptionDeleted(Event stripeEvent, CancellationToken cancellationToken)
     {
         var subscription = stripeEvent.Data.Object as StripeSubscription;
-        if (subscription == null) return;
+        if (subscription == null)
+        {
+            return;
+        }
 
-        _logger.LogInformation("Subscription deleted: {SubscriptionId}", subscription.Id);
+        _logger.SubscriptionDeleted(subscription.Id);
         
         // TODO: Update subscription status in database
-        await Task.CompletedTask;
+    await Task.CompletedTask.ConfigureAwait(false);
     }
 
     private string GetStripePriceId(string planId)
     {
-                return planId.ToLowerInvariant() switch
+        return planId.ToLowerInvariant() switch
         {
             "starter" => _configuration["Stripe:Plans:Starter:PriceId"] ?? "price_starter_default",
             "growth" => _configuration["Stripe:Plans:Growth:PriceId"] ?? "price_growth_default",

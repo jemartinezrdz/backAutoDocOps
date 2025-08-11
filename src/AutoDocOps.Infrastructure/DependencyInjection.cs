@@ -17,6 +17,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using Polly;
+using Polly.Extensions.Http;
+using System.Net.Http;
+using Stripe;
+using AutoDocOps.Infrastructure.Monitoring;
+using System.Threading.Channels;
+using AutoDocOps.Domain.Entities;
 
 namespace AutoDocOps.Infrastructure;
 
@@ -24,6 +31,8 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+    ArgumentNullException.ThrowIfNull(services);
+    ArgumentNullException.ThrowIfNull(configuration);
         // Add DbContext
         services.AddDbContext<AutoDocOpsDbContext>(options =>
         {
@@ -62,8 +71,34 @@ public static class DependencyInjection
         // Add cache service
         services.AddScoped<ICacheService, RedisCacheService>();
 
+        // Resilient HttpClient for billing-related outbound calls (placeholder for future external integrations)
+        var retryPolicy = HttpPolicyExtensions
+            .HandleTransientHttpError()
+            .OrResult(msg => (int)msg.StatusCode == 429)
+            .WaitAndRetryAsync(3, attempt => TimeSpan.FromMilliseconds(100 * Math.Pow(2, attempt)));
+        var circuitBreakerPolicy = HttpPolicyExtensions
+            .HandleTransientHttpError()
+            .CircuitBreakerAsync(5, TimeSpan.FromSeconds(30));
+
+        services.AddHttpClient("Billing")
+            .SetHandlerLifetime(TimeSpan.FromMinutes(5))
+            .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(5))
+            .AddPolicyHandler(retryPolicy)
+            .AddPolicyHandler(circuitBreakerPolicy);
+
+        // Stripe client singleton
+        services.AddSingleton(provider => new StripeClient(configuration["Stripe:SecretKey"] ?? string.Empty));
+
         // Add billing service
-        services.AddScoped<IBillingService, BillingService>();
+    services.AddScoped<IBillingService, Services.BillingService>();
+    services.AddSingleton<ISecretSourceProvider, SecretSourceProvider>();
+        services.AddSingleton(Channel.CreateBounded<BillingAuditLog>(new BoundedChannelOptions(1000)
+        {
+            FullMode = BoundedChannelFullMode.DropWrite
+        }));
+        services.AddScoped<IBillingAuditService, BillingAuditService>();
+        services.AddHostedService<BillingAuditBackgroundService>();
+    // Audit background processing channel + hosted service configured in BillingAuditService file
 
         // Add LLM client
                 var useFakeLlm = Environment.GetEnvironmentVariable("USE_FAKE_LLM")?.ToLowerInvariant() == "true";

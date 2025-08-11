@@ -3,6 +3,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using StackExchange.Redis;
+using AutoDocOps.Infrastructure.Logging;
 
 namespace AutoDocOps.Infrastructure.Services;
 
@@ -23,20 +24,20 @@ public class RedisCacheService : ICacheService
     {
         try
         {
-            var cachedValue = await _distributedCache.GetStringAsync(key, cancellationToken);
+                var cachedValue = await _distributedCache.GetStringAsync(key, cancellationToken).ConfigureAwait(false);
             
             if (string.IsNullOrEmpty(cachedValue))
             {
-                _logger.LogDebug("Cache miss for key: {Key}", key);
+                _logger.CacheMiss(key);
                 return null;
             }
 
-            _logger.LogDebug("Cache hit for key: {Key}", key);
+            _logger.CacheHit(key);
             return JsonSerializer.Deserialize<T>(cachedValue);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting cached value for key: {Key}", key);
+            _logger.CacheGetError(key, ex);
             return null;
         }
     }
@@ -51,12 +52,12 @@ public class RedisCacheService : ICacheService
                 AbsoluteExpirationRelativeToNow = expiration
             };
 
-            await _distributedCache.SetStringAsync(key, serializedValue, options, cancellationToken);
-            _logger.LogDebug("Cached value for key: {Key} with expiration: {Expiration}", key, expiration);
+                await _distributedCache.SetStringAsync(key, serializedValue, options, cancellationToken).ConfigureAwait(false);
+            _logger.CacheSet(key, expiration);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error setting cached value for key: {Key}", key);
+            _logger.CacheSetError(key, ex);
         }
     }
 
@@ -64,12 +65,12 @@ public class RedisCacheService : ICacheService
     {
         try
         {
-            await _distributedCache.RemoveAsync(key, cancellationToken);
-            _logger.LogDebug("Removed cached value for key: {Key}", key);
+                await _distributedCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+            _logger.CacheRemove(key);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error removing cached value for key: {Key}", key);
+            _logger.CacheRemoveError(key, ex);
         }
     }
 
@@ -79,7 +80,7 @@ public class RedisCacheService : ICacheService
         {
             if (_connectionMultiplexer == null)
             {
-                _logger.LogWarning("RemoveByPatternAsync requires IConnectionMultiplexer to be injected. Falling back to no-op. Pattern: {Pattern}", pattern);
+                _logger.CachePatternNoConnection(pattern);
                 return;
             }
 
@@ -89,17 +90,17 @@ public class RedisCacheService : ICacheService
             var keys = server.Keys(pattern: pattern).ToArray();
             if (keys.Length > 0)
             {
-                await database.KeyDeleteAsync(keys);
-                _logger.LogInformation("Removed {Count} keys matching pattern: {Pattern}", keys.Length, pattern);
+                    await database.KeyDeleteAsync(keys).ConfigureAwait(false);
+                _logger.CachePatternRemoved(keys.Length, pattern);
             }
             else
             {
-                _logger.LogDebug("No keys found matching pattern: {Pattern}", pattern);
+                _logger.CachePatternNone(pattern);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error removing keys by pattern: {Pattern}", pattern);
+            _logger.CachePatternError(pattern, ex);
             throw;
         }
     }
@@ -121,7 +122,7 @@ public class RedisCacheService : ICacheService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting cached value synchronously for key: {Key}", key);
+            _logger.CacheGetSyncError(key, ex);
             value = null;
             return false;
         }

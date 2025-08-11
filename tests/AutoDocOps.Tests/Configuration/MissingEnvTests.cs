@@ -2,7 +2,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using AutoDocOps.Application.Authentication.Models;
-using AutoDocOps.Application.Common.Models;
+using AutoDocOps.Domain.Enums;
+using AutoDocOps.Application.Common.Models; // For DbSettings
 using Xunit;
 
 namespace AutoDocOps.Tests.Configuration;
@@ -10,7 +11,7 @@ namespace AutoDocOps.Tests.Configuration;
 public class MissingEnvTests
 {
     [Fact]
-    public void JwtSettings_ShouldFailValidation_WhenSecretKeyIsMissing()
+    public void JwtSettingsShouldFailValidationWhenSecretKeyIsMissing()
     {
         // Arrange
         var configuration = new ConfigurationBuilder()
@@ -39,7 +40,7 @@ public class MissingEnvTests
     }
 
     [Fact]
-    public void JwtSettings_ShouldFailValidation_WhenSecretKeyIsTooShort()
+    public void JwtSettingsShouldFailValidationWhenSecretKeyIsTooShort()
     {
         // Arrange
         var configuration = new ConfigurationBuilder()
@@ -68,7 +69,7 @@ public class MissingEnvTests
     }
 
     [Fact]
-    public void DbSettings_ShouldFailValidation_WhenConnectionStringIsMissing()
+    public void DbSettingsShouldFailValidationWhenConnectionStringIsMissing()
     {
         // Arrange
         var configuration = new ConfigurationBuilder()
@@ -96,7 +97,7 @@ public class MissingEnvTests
     }
 
     [Fact]
-    public void AllSettings_ShouldPassValidation_WhenProperlyConfigured()
+    public void AllSettingsShouldPassValidationWhenProperlyConfigured()
     {
         // Arrange
         var configuration = new ConfigurationBuilder()

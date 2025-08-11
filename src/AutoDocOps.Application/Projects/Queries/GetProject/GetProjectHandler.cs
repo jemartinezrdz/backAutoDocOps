@@ -18,16 +18,17 @@ public class GetProjectHandler : IRequestHandler<GetProjectQuery, GetProjectResp
 
     public async Task<GetProjectResponse> Handle(GetProjectQuery request, CancellationToken cancellationToken)
     {
+    ArgumentNullException.ThrowIfNull(request);
         var cacheKey = $"project:{request.Id}";
         
         // Try to get from cache first using async method
-        var cachedResponse = await _cacheService.GetAsync<GetProjectResponse>(cacheKey, cancellationToken);
+    var cachedResponse = await _cacheService.GetAsync<GetProjectResponse>(cacheKey, cancellationToken).ConfigureAwait(false);
         if (cachedResponse != null)
         {
             return cachedResponse;
         }
         
-        var project = await _projectRepository.GetByIdAsync(request.Id, cancellationToken);
+    var project = await _projectRepository.GetByIdAsync(request.Id, cancellationToken).ConfigureAwait(false);
         
         if (project == null)
         {
@@ -50,7 +51,7 @@ public class GetProjectHandler : IRequestHandler<GetProjectQuery, GetProjectResp
         var response = new GetProjectResponse(projectDto);
         
         // Cache the response for 20 minutes
-        await _cacheService.SetAsync(cacheKey, response, TimeSpan.FromMinutes(20), cancellationToken);
+    await _cacheService.SetAsync(cacheKey, response, TimeSpan.FromMinutes(20), cancellationToken).ConfigureAwait(false);
 
         return response;
     }

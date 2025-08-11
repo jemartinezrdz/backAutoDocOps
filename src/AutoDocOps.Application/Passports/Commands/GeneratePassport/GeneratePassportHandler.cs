@@ -19,8 +19,9 @@ public class GeneratePassportHandler : IRequestHandler<GeneratePassportCommand, 
 
     public async Task<GeneratePassportResponse> Handle(GeneratePassportCommand request, CancellationToken cancellationToken)
     {
+    ArgumentNullException.ThrowIfNull(request);
         // Verify project exists
-        var project = await _projectRepository.GetByIdAsync(request.ProjectId, cancellationToken);
+    var project = await _projectRepository.GetByIdAsync(request.ProjectId, cancellationToken).ConfigureAwait(false);
         if (project == null)
         {
             throw new ArgumentException($"Project with ID {request.ProjectId} not found.");
@@ -39,7 +40,7 @@ public class GeneratePassportHandler : IRequestHandler<GeneratePassportCommand, 
             DocumentationContent = string.Empty // Will be populated by background service
         };
 
-        var createdPassport = await _passportRepository.CreateAsync(passport, cancellationToken);
+    var createdPassport = await _passportRepository.CreateAsync(passport, cancellationToken).ConfigureAwait(false);
 
         // Background service will pick up the passport with "Generating" status and process it
 

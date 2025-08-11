@@ -6,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
+using AutoDocOps.Infrastructure.Logging;
 
 namespace AutoDocOps.Infrastructure.Services;
 
@@ -14,7 +15,7 @@ public class DocumentationGenerationService : BackgroundService
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ILogger<DocumentationGenerationService> _logger;
     private readonly DocumentationGenerationOptions _options;
-    private int _failureCount = 0;
+    private int _failureCount;
     private TimeSpan _currentRetryDelay;
     private readonly TimeSpan _maxRetryDelay = TimeSpan.FromHours(1); // Maximum retry delay
 
@@ -23,6 +24,9 @@ public class DocumentationGenerationService : BackgroundService
         ILogger<DocumentationGenerationService> logger,
         IOptions<DocumentationGenerationOptions> options)
     {
+        ArgumentNullException.ThrowIfNull(serviceScopeFactory);
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(options);
         _serviceScopeFactory = serviceScopeFactory;
         _logger = logger;
         _options = options.Value;
@@ -31,7 +35,7 @@ public class DocumentationGenerationService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Documentation Generation Service started at {StartTime}", DateTime.UtcNow);
+    _logger.DocGenServiceStarted(DateTime.UtcNow);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -43,15 +47,15 @@ public class DocumentationGenerationService : BackgroundService
                     ["Timestamp"] = DateTime.UtcNow
                 });
 
-                await ProcessPendingPassports(stoppingToken);
+                await ProcessPendingPassports(stoppingToken).ConfigureAwait(false);
                 // Reset failure count on successful processing
                 _failureCount = 0;
                 _currentRetryDelay = TimeSpan.FromMinutes(_options.RetryDelayMinutes);
-                await Task.Delay(TimeSpan.FromSeconds(_options.CheckIntervalSeconds), stoppingToken);
+        await Task.Delay(TimeSpan.FromSeconds(_options.CheckIntervalSeconds), stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException ex)
             {
-                _logger.LogInformation(ex, "Documentation Generation Service is shutting down gracefully");
+        _logger.DocGenServiceStopping(ex);
                 break;
             }
             catch (Exception ex)
@@ -59,12 +63,11 @@ public class DocumentationGenerationService : BackgroundService
                 _failureCount++;
                 // Exponential backoff: double the delay, up to maxRetryDelay using BackoffHelper for precision and overflow protection
                 _currentRetryDelay = BackoffHelper.NextDelay(_currentRetryDelay, _maxRetryDelay);
-                _logger.LogError(ex, "Critical error in documentation generation service at {ErrorTime}. Retrying after {RetryDelay} (attempt {FailureCount})", DateTime.UtcNow, _currentRetryDelay, _failureCount);
-                await Task.Delay(_currentRetryDelay, stoppingToken);
+        _logger.DocGenServiceCriticalError(DateTime.UtcNow, _currentRetryDelay, _failureCount, ex);
+        await Task.Delay(_currentRetryDelay, stoppingToken).ConfigureAwait(false);
             }
         }
-
-        _logger.LogInformation("Documentation Generation Service stopped at {StopTime}", DateTime.UtcNow);
+    _logger.DocGenServiceStopped(DateTime.UtcNow);
     }
 
     private async Task ProcessPendingPassports(CancellationToken cancellationToken)
@@ -73,14 +76,16 @@ public class DocumentationGenerationService : BackgroundService
         var passportRepository = scope.ServiceProvider.GetRequiredService<IPassportRepository>();
         var projectRepository = scope.ServiceProvider.GetRequiredService<IProjectRepository>();
 
-        var pendingPassports = await passportRepository.GetByStatusAsync(PassportStatus.Generating, cancellationToken);
+    var pendingPassports = await passportRepository.GetByStatusAsync(PassportStatus.Generating, cancellationToken).ConfigureAwait(false);
         
-        _logger.LogInformation("Found {PendingCount} passports to process", pendingPassports.Count());
+    _logger.DocGenFoundPending(pendingPassports.Count());
 
         foreach (var passport in pendingPassports)
         {
             if (cancellationToken.IsCancellationRequested)
+            {
                 break;
+            }
 
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             
@@ -93,23 +98,21 @@ public class DocumentationGenerationService : BackgroundService
                     ["Operation"] = "ProcessPassport"
                 });
 
-                await ProcessPassport(passport, projectRepository, passportRepository, cancellationToken);
+                await ProcessPassport(passport, projectRepository, passportRepository, cancellationToken).ConfigureAwait(false);
                 
                 stopwatch.Stop();
-                _logger.LogInformation("Successfully processed passport {PassportId} in {ProcessingTimeMs}ms", 
-                    passport.Id, stopwatch.ElapsedMilliseconds);
+                _logger.DocGenPassportProcessed(passport.Id, stopwatch.ElapsedMilliseconds);
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                _logger.LogError(ex, "Failed to process passport {PassportId} after {ProcessingTimeMs}ms: {ErrorMessage}", 
-                    passport.Id, stopwatch.ElapsedMilliseconds, ex.Message);
+                _logger.DocGenPassportError(passport.Id, stopwatch.ElapsedMilliseconds, ex.Message, ex);
                 
                 // Mark as failed
                 passport.Status = PassportStatus.Failed;
                 passport.CompletedAt = DateTime.UtcNow;
                 passport.ErrorMessage = ex.Message;
-                await passportRepository.UpdateAsync(passport, cancellationToken);
+                await passportRepository.UpdateAsync(passport, cancellationToken).ConfigureAwait(false);
             }
         }
     }
@@ -120,11 +123,10 @@ public class DocumentationGenerationService : BackgroundService
         IPassportRepository passportRepository, 
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Processing passport {PassportId} for project {ProjectId}", 
-            passport.Id, passport.ProjectId);
+    _logger.DocGenProcessingPassport(passport.Id, passport.ProjectId);
 
         // Get project details
-        var project = await projectRepository.GetByIdWithSpecsAsync(passport.ProjectId, cancellationToken);
+    var project = await projectRepository.GetByIdWithSpecsAsync(passport.ProjectId, cancellationToken).ConfigureAwait(false);
         if (project == null)
         {
             throw new InvalidOperationException($"Project {passport.ProjectId} not found");
@@ -133,7 +135,7 @@ public class DocumentationGenerationService : BackgroundService
         // Simulate documentation generation process
         if (_options.EnableSimulation)
         {
-            await SimulateDocumentationGeneration(passport, cancellationToken);
+            await SimulateDocumentationGeneration(passport, cancellationToken).ConfigureAwait(false);
         }
 
         // Mark as completed
@@ -150,11 +152,11 @@ public class DocumentationGenerationService : BackgroundService
             SpecsAnalyzed = project.Specs.Count,
             GeneratedAt = DateTime.UtcNow
         };
-        passport.Metadata = JsonSerializer.Serialize(metadata);
+    passport.Metadata = JsonSerializer.Serialize(metadata);
 
-        await passportRepository.UpdateAsync(passport, cancellationToken);
+    await passportRepository.UpdateAsync(passport, cancellationToken).ConfigureAwait(false);
 
-        _logger.LogInformation("Completed processing passport {PassportId}", passport.Id);
+    _logger.DocGenPassportCompleted(passport.Id);
     }
 
     private async Task SimulateDocumentationGeneration(Passport passport, CancellationToken cancellationToken)
@@ -174,10 +176,12 @@ public class DocumentationGenerationService : BackgroundService
         foreach (var phase in phases)
         {
             if (cancellationToken.IsCancellationRequested)
+            {
                 break;
+            }
 
-            _logger.LogDebug("Passport {PassportId}: {Phase}", passport.Id, phase);
-            await Task.Delay(phaseDelay, cancellationToken);
+            _logger.DocGenPassportPhase(passport.Id, phase);
+            await Task.Delay(phaseDelay, cancellationToken).ConfigureAwait(false);
         }
     }
 

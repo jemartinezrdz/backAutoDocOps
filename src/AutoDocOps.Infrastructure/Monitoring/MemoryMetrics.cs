@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime;
 using Microsoft.Extensions.Logging;
+using AutoDocOps.Infrastructure.Logging;
 
 namespace AutoDocOps.Infrastructure.Monitoring;
 
@@ -56,10 +57,10 @@ public class MemoryMetrics
         using var activity = ActivitySource.StartActivity($"Monitor_{operationName}");
         
         var before = GetCurrentUsage();
-        logger?.LogDebug("Starting memory monitoring for operation: {OperationName}", operationName);
+    logger?.MemoryMonitorStart(operationName);
         
         var stopwatch = Stopwatch.StartNew();
-        var result = await operation();
+    var result = await operation().ConfigureAwait(false);
         stopwatch.Stop();
         
         var after = GetCurrentUsage();
@@ -82,14 +83,12 @@ public class MemoryMetrics
         // Log memory pressure warnings
         if (delta.WorkingSetDelta > 50 * 1024 * 1024) // 50MB increase
         {
-            logger?.LogWarning("High memory usage detected in {OperationName}: {MemoryIncrease:F2} MB", 
-                operationName, delta.WorkingSetDelta / 1024.0 / 1024.0);
+            logger?.MemoryHighUsage(operationName, delta.WorkingSetDelta / 1024.0 / 1024.0);
         }
         
         if (delta.NewGen2Collections > 0)
         {
-            logger?.LogWarning("Gen2 garbage collections occurred during {OperationName}: {Collections}", 
-                operationName, delta.NewGen2Collections);
+            logger?.MemoryGen2Collections(operationName, delta.NewGen2Collections);
         }
         
         // Add telemetry tags
@@ -97,7 +96,7 @@ public class MemoryMetrics
         activity?.SetTag("memory.gc_collections_gen2", delta.NewGen2Collections);
         activity?.SetTag("operation.duration_ms", delta.Duration.TotalMilliseconds);
         
-        logger?.LogDebug("Memory monitoring completed for {OperationName}: {Delta}", operationName, delta);
+    logger?.MemoryMonitorCompleted(operationName, delta.ToString());
         
         return (result, delta);
     }

@@ -1,27 +1,198 @@
-El pipeline en git marco error en el test
-Error: /home/runner/work/backAutoDocOps/backAutoDocOps/src/AutoDocOps.WebAPI/Program.cs(266,51): error CS0103: The name 'json' does not exist in the current context [/home/runner/work/backAutoDocOps/backAutoDocOps/src/AutoDocOps.WebAPI/AutoDocOps.WebAPI.csproj]
-    423 Warning(s)
-    1 Error(s)
+¡Bien! Leí tu resumen con lupa. Vas muy bien. Te dejo un análisis “quirúrgico” punto por punto y, sobre todo, el camino más práctico para cerrar sin quedarte bloqueado por el exporter de Prometheus.
 
-Time Elapsed 00:00:11.94
-Error: Process completed with exit code 1.
-Ya lo corregi, te comparto el resumen y lo que necesito que me ayudes hacer
+Qué ya hiciste bien (y por qué conviene mantenerlo)
+OTel + instrumentación HTTP en Program.cs: perfecto; esto no depende del exporter.
 
-He abordado el error y parte de los warnings clave:
+Histogram _seconds y counters con labels estables: vas en línea con buenas prácticas (nombres y unidades correctas).
 
-Resumen acciones:
+BillingService hardening (CA1062, ConfigureAwait(false), braces): ✔️
 
-Eliminé la configuración global de cobertura (CollectCoverage / Threshold) de Directory.Build.props que podía forzar exit code 1 en build normales.
-Moví los thresholds de cobertura al proyecto de tests para que sólo se apliquen al ejecutar pruebas.
-Corregí handlers con CA1062 y CA2007 (CreateProjectHandler y DeletePassportHandler) usando ArgumentNullException.ThrowIfNull y ConfigureAwait(false).
-Arreglé el error CS0103 en Program.cs (variable json fuera de scope) y normalicé StartsWith con StringComparison.
-Añadí ConfigureAwait(false) en varias esperas del streaming y webhook.
-Build ahora compila (0 errores). Solo quedan warnings (principalmente CA1848, CA2007 restantes en controllers y Program, CA1062 en dos acciones de controller, y CA1304/CA1311 por cultura).
+Logging centralizado con LoggerMessage en Infrastructure y eliminación de duplicados en WebAPI: ✔️
 
-Ayudame aplicando todos estos puntos por favor
+Auditoría degradable con try/catch y log de fallo: ✔️ (evita romper el flujo).
 
-Introducir LoggerMessage (source-generated o métodos estáticos) para reducir los CA1848 más importantes (en paths críticos).
-Añadir ArgumentNullException.ThrowIfNull en los métodos de controllers marcados con CA1062.
-Reemplazar ToLower() por ToLowerInvariant() o ToLower(CultureInfo.InvariantCulture) y StartsWith/EndsWith con StringComparison adecuados donde falte.
-Decidir si realmente quieres aplicar ConfigureAwait(false) en todos los awaits (en ASP.NET Core no es estrictamente necesario; podríamos suprimir CA2007 globalmente para claridad).
-Opcional: crear Partial static class Logging con definiciones de LoggerMessage para las frases repetidas.
+Rate limiting particionado por Stripe-Signature/IP: ✔️
+
+Accepts en el endpoint: ✔️
+
+Bloqueante actual: Prometheus exporter
+Quitaste MapPrometheusScrapingEndpoint por NU1103 (paquete inestable). En lugar de quedarte esperando a que salga una versión “aceptable”, estas son las tres vías prácticas (te ordeno por estabilidad/costo de cambio):
+
+Opción 1 (recomendada): OTLP → OpenTelemetry Collector → Prometheus
+Lo bueno: no dependes del exporter in‑proc; usas paquetes estables; el Collector expone /metrics.
+Cambio en código: mantén tu instrumentación actual y agrega el OTLP exporter (no el de Prometheus) en WebAPI:
+
+
+builder.Services.AddOpenTelemetry()
+  .WithMetrics(m =>
+  {
+    m.AddAspNetCoreInstrumentation();
+    m.AddHttpClientInstrumentation();
+    m.AddMeter("AutoDocOps.Webhook");
+    m.AddOtlpExporter(); // <- en vez de AddPrometheusExporter
+  });
+Collector (docker-compose o servicio):
+
+
+receivers:
+  otlp:
+    protocols: { http: { endpoint: 0.0.0.0:4318 } }
+exporters:
+  prometheus:
+    endpoint: "0.0.0.0:9464"
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: [prometheus]
+Ventajas prácticas: hoy mismo scrapeas http://collector:9464/metrics sin tocar tu binario; en pruebas integrales puedes levantar el Collector “sidecar”.
+
+Opción 2: Tests sin exporter (medir métricas “en memoria”)
+Aunque no expongas /metrics por ahora, puedes testear métricas hoy con MeterListener. No dependes de ningún paquete:
+
+
+var seen = 0;
+using var listener = new MeterListener
+{
+    InstrumentPublished = (inst, l) =>
+    {
+        if (inst.Meter.Name == "AutoDocOps.Webhook") l.EnableMeasurementEvents(inst);
+    },
+    MeasurementsCompleted = (inst) => { }
+};
+listener.SetMeasurementEventCallback<long>((instrument, value, tags, state) =>
+{
+    if (instrument.Name == "stripe_webhook_requests_total") Interlocked.Add(ref seen, (int)value);
+});
+listener.Start();
+
+// 1) invoca el webhook (TestServer / WebApplicationFactory)
+// 2) aserta que `seen` incrementó y que los tags esperados están presentes
+Ventajas prácticas: tus tests de métricas dejan de depender del endpoint /metrics. Cuando más adelante re‑expongas /metrics, sumas un test de “scrape”.
+
+Opción 3: mantener el exporter pre‑release con feature flag
+Si aceptas prerelease: fija la versión y expón /metrics solo cuando Features:EnableMetricsScrape = true. En Prod puedes dejarlo off mientras defines el SLA.
+
+Ajustes finos recomendados (prácticos) a lo ya aplicado
+1) Histogram con buckets explícitos (vía View)
+Ya tienes buckets “conceptuales”; házlos efectivos declarando una view en OTel .NET:
+
+
+builder.Services.AddOpenTelemetry()
+  .WithMetrics(m =>
+  {
+    m.AddAspNetCoreInstrumentation();
+    m.AddHttpClientInstrumentation();
+    m.AddMeter("AutoDocOps.Webhook");
+
+    m.AddView("stripe_webhook_latency_seconds", new ExplicitBucketHistogramConfiguration
+    {
+        Boundaries = new double[] { 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10 }
+    });
+
+    // exporter: Opción 1 (OTLP) u Opción 3 (Prometheus AspNetCore) cuando re‑introduzcas
+  });
+Por qué es práctico: te garantiza percentiles útiles (p95/p99) ahora y después, sin rehacer dashboards.
+
+2) Métricas: etiquetas uniformes y bajas en cardinalidad
+Ya lo hiciste, pero consolida los valores exactos en una clase estática para evitar typos:
+
+
+internal static class WebhookMetricTags
+{
+    public const string Result = "result";
+    public const string Reason = "reason";
+    public const string Ok = "ok";
+    public const string Fail = "fail";
+    public static class Reasons
+    {
+        public const string Signature = "signature";
+        public const string TooLarge = "too_large";
+        public const string UnsupportedMedia = "unsupported_media";
+        public const string Empty = "empty";
+        public const string Timeout = "timeout";
+    }
+}
+Por qué: si todo el código usa estos literales, no se te cuela tooLarge, TooLarge, etc.
+
+3) BillingService: completa “hardening” útil de verdad
+Ya tienes null‑checks y ConfigureAwait(false). Suma lo más rentable:
+
+CancellationToken de punta a punta (métodos públicos y llamadas HTTP).
+
+Timeouts explícitos del HttpClient y Polly (retry con backoff y circuit‑breaker) en AddHttpClient("Billing").
+
+Telemetry: contador billing_operations_total{op="create|cancel", result="ok|fail"} y billing_operation_latency_seconds.
+
+Con esto diagnosticas rápido qué se rompio (Stripe, red, tu servicio), sin abrir logs.
+
+4) Auditoría: mínima pero robusta (sin bloquear)
+Mantén la degradación y agrega:
+
+Canal acotado (Channel<AuditItem> capacity p.ej. 1000) + BackgroundService que escribe en BD.
+Si se llena, registra un warning y descarta (mejor que frenar el webhook).
+
+Scrubbing: nunca escribas PII/secretos completos.
+
+Campos útiles: TraceId/SpanId, SecretSource, EventType, Outcome, LatencyMs.
+
+Es muy barato de implementar y elimina el “riesgo de bloqueo”.
+
+5) Rate limiting: detalle que ayuda en producción
+QueueLimit = 0 (ya lo haces): preferir drop a encolar.
+
+Retry-After en 429: añade el header con segundos sugeridos (mejora la interacción con quien consume, incluso si es Stripe o un relay interno).
+
+6) Tests de métricas: hazlos exporter‑agnostic
+Mantén tu test de /metrics pero Skip si METRICS_SCRAPE_ENABLED != true.
+
+Agrega otro test con MeterListener (opción 2).
+Así cubres métricas siempre, y /metrics cuando lo habilites.
+
+Ejemplo Skip:
+
+
+[Fact(Skip = SkipIfNoScrape)]
+public async Task Metrics_endpoint_exposes_counters()
+{
+    // ...
+}
+private const string SkipIfNoScrape =
+    (Environment.GetEnvironmentVariable("METRICS_SCRAPE_ENABLED") == "true")
+    ? null
+    : "Scrape disabled in this build";
+7) .editorconfig y CI
+Dices que ya cubre CA1062/CA1848. Para “cerrar” calidad:
+
+Súbelas a error en CI y guarda un baseline SARIF.
+
+Agrega dotnet build /p:errorlog=artifacts/analyzers.sarif y compara contra baselines/analyzers.sarif.
+Esto te evita reintroducir problemas sin depender solo de tests.
+
+Qué hago con tu PrometheusMetricsTests hoy
+No lo elimines.
+
+Hazlo dual:
+
+Siempre corre un test que verifica incrementos con MeterListener (no depende de /metrics).
+
+Condicional (Skip) el test que raspa /metrics hasta reintroducir el exporter (Opción 1 u Opción 3).
+
+Así no pierdes cobertura y evitas falsos rojos.
+
+Próximos pasos – prácticos y cortos
+(Recomendado) Implementa Opción 1: OTLP exporter + Collector con exporter Prometheus.
+
+Cambios en código: mínimos (solo AddOtlpExporter); tests de integración pueden apuntar a collector:9464/metrics.
+
+En local/CI, levantas el Collector via docker‑compose.
+
+Suma AddView(...) con buckets explícitos al histograma de latencia.
+
+Completa tests de métricas con MeterListener + Skip condicional del scraper.
+
+BillingService: añade CancellationToken, HttpClientFactory + Polly, y contadores/histograma de billing.
+
+Auditoría: canal acotado + BackgroundService + scrubbing.
+
+Con esto quedas cerrado: observabilidad real ya (sin esperar paquete), tests que no dependen del exporter, y servicios robustos sin bloquear el flujo.

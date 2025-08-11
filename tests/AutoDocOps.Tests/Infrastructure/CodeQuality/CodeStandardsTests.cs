@@ -23,7 +23,7 @@ public class CodeStandardsTests
     }
 
     [Fact]
-    public void ShouldNotUseDirectLoggerCalls_CA1848_Prevention()
+    public void ShouldNotUseDirectLoggerCallsCa1848Prevention()
     {
         var violations = new List<string>();
         var sourceFiles = GetCSharpFiles(_sourceDirectories);
@@ -47,7 +47,9 @@ public class CodeStandardsTests
         {
             // Skip test files and other allowed exceptions
             if (allowedExceptions.Any(exception => file.Contains(exception)))
+            {
                 continue;
+            }
 
             var content = File.ReadAllText(file);
             var lines = content.Split('\n');
@@ -63,15 +65,15 @@ public class CodeStandardsTests
         }
 
         // Allow some violations for existing code but prevent regression
-        Assert.True(violations.Count < 70, // Current baseline: ~59 violations
+        Assert.True(violations.Count < StandardsLimits.MaxDirectLoggerViolations, // Current baseline tracked via env override
             $"Found {violations.Count} direct logger calls that should use LoggerMessage delegates (CA1848). " +
-            "New WebAPI/Infrastructure code should use LoggerMessage pattern. Current baseline: 59 violations.\n" +
+            $"New WebAPI/Infrastructure code should use LoggerMessage pattern. Baseline limit: {StandardsLimits.MaxDirectLoggerViolations}.\n" +
             string.Join("\n", violations.Take(5)) + 
             (violations.Count > 5 ? $"\n... and {violations.Count - 5} more" : ""));
     }
 
     [Fact]
-    public void ShouldHaveArgumentNullValidation_CA1062_Prevention()
+    public void ShouldHaveArgumentNullValidationCa1062Prevention()
     {
         var violations = new List<string>();
         var sourceFiles = GetCSharpFiles(_sourceDirectories);
@@ -83,7 +85,9 @@ public class CodeStandardsTests
         {
             // Only check controllers that handle complex input
             if (!file.Contains("Controller") || file.Contains("Tests.cs") || IsExemptController(file))
+            {
                 continue;
+            }
 
             var content = File.ReadAllText(file);
             
@@ -106,14 +110,14 @@ public class CodeStandardsTests
         }
 
         // Make this a warning rather than a hard failure for existing code
-        Assert.True(violations.Count <= 3, // Allow some existing violations
+    Assert.True(violations.Count <= StandardsLimits.MaxControllerNullValidationViolations,
             $"Found {violations.Count} potential CA1062 violations (missing null validation). " +
             "New controllers should validate complex inputs:\n" +
             string.Join("\n", violations));
     }
 
     [Fact]
-    public void ShouldUseInvariantCulture_CA1304_CA1311_Prevention()
+    public void ShouldUseInvariantCultureCa1304Ca1311Prevention()
     {
         var violations = new List<string>();
         var sourceFiles = GetCSharpFiles(_sourceDirectories);
@@ -141,7 +145,9 @@ public class CodeStandardsTests
         {
             // Skip test files
             if (file.Contains("Tests.cs"))
+            {
                 continue;
+            }
 
             var content = File.ReadAllText(file);
             var lines = content.Split('\n');
@@ -169,7 +175,7 @@ public class CodeStandardsTests
     }
 
     [Fact]
-    public void ShouldUseConfigureAwaitFalse_CA2007_Prevention()
+    public void ShouldUseConfigureAwaitFalseCa2007Prevention()
     {
         var violations = new List<string>();
         var sourceFiles = GetCSharpFiles(_sourceDirectories);
@@ -194,7 +200,9 @@ public class CodeStandardsTests
         {
             // Skip test files, controllers, and Program.cs (ASP.NET Core doesn't need ConfigureAwait(false))
             if (file.Contains("Tests.cs") || file.Contains("Controller") || file.Contains("Program.cs"))
+            {
                 continue;
+            }
 
             var content = File.ReadAllText(file);
             var lines = content.Split('\n');
@@ -213,7 +221,7 @@ public class CodeStandardsTests
         }
 
         // For now, allow some violations since this is a preventive test
-        Assert.True(violations.Count < 100, // Set a reasonable threshold
+    Assert.True(violations.Count < StandardsLimits.MaxAwaitWithoutConfigureAwaitViolations,
             $"Found {violations.Count} await calls that should use ConfigureAwait(false) (CA2007). " +
             "New code should use ConfigureAwait(false) in library code:\n" +
             string.Join("\n", violations.Take(5)) +
@@ -249,7 +257,7 @@ public class CodeStandardsTests
     }
 
     [Fact]
-    public void ShouldNotHaveHardcodedStrings_InLogging()
+    public void ShouldNotHaveHardcodedStringsInLogging()
     {
         var violations = new List<string>();
         var sourceFiles = GetCSharpFiles(_sourceDirectories);
@@ -272,7 +280,9 @@ public class CodeStandardsTests
         foreach (var file in sourceFiles)
         {
             if (allowedFiles.Any(allowed => file.Contains(allowed)))
+            {
                 continue;
+            }
 
             var content = File.ReadAllText(file);
             var lines = content.Split('\n');
@@ -288,9 +298,9 @@ public class CodeStandardsTests
         }
 
         // Allow some violations for existing code but prevent regression
-        Assert.True(violations.Count < 40, // Current baseline: ~35 violations
+        Assert.True(violations.Count < StandardsLimits.MaxHardcodedLogStringViolations,
             $"Found {violations.Count} hardcoded strings in logging calls. " +
-            "New WebAPI/Infrastructure code should use LoggerMessage delegates instead. Current baseline: 35 violations.\n" +
+            $"New WebAPI/Infrastructure code should use LoggerMessage delegates instead. Baseline limit: {StandardsLimits.MaxHardcodedLogStringViolations}.\n" +
             string.Join("\n", violations.Take(5)) +
             (violations.Count > 5 ? $"\n... and {violations.Count - 5} more" : ""));
     }
@@ -300,7 +310,7 @@ public class CodeStandardsTests
         var currentDirectory = Directory.GetCurrentDirectory();
         var directory = new DirectoryInfo(currentDirectory);
 
-        while (directory != null && !directory.GetFiles("*.sln").Any())
+    while (directory != null && directory.GetFiles("*.sln").Length == 0)
         {
             directory = directory.Parent;
         }
@@ -308,28 +318,25 @@ public class CodeStandardsTests
         return directory?.FullName ?? throw new InvalidOperationException("Solution file not found");
     }
 
-    private static IEnumerable<string> GetCSharpFiles(string[] directories)
-    {
-        var files = new List<string>();
-        
-        foreach (var directory in directories)
-        {
-            if (Directory.Exists(directory))
-            {
-                files.AddRange(Directory.GetFiles(directory, "*.cs", SearchOption.AllDirectories));
-            }
-        }
-
-        return files;
-    }
+    private static IEnumerable<string> GetCSharpFiles(string[] directories) =>
+        directories
+            .Where(Directory.Exists)
+            .SelectMany(d => Directory.EnumerateFiles(d, "*.cs", SearchOption.AllDirectories))
+            .Where(p => !p.Contains("\\bin\\") && !p.Contains("\\obj\\"))
+            .Where(p => !p.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase))
+            .Where(p => !p.EndsWith(".Designer.cs", StringComparison.OrdinalIgnoreCase))
+            .Where(p => !p.Contains("\\Migrations\\"));
 
     private static bool IsInTestOrCommentContext(string line)
     {
+        // Heuristic: quick skip for line comments, block comment markers, or common test artifacts
         var trimmedLine = line.Trim();
-        return trimmedLine.StartsWith("//") || 
-               trimmedLine.StartsWith("/*") || 
-               trimmedLine.StartsWith("*") ||
-               trimmedLine.Contains("Test");
+        if (trimmedLine.StartsWith("//", StringComparison.Ordinal) || trimmedLine.StartsWith("/*", StringComparison.Ordinal) || trimmedLine.StartsWith('*') || trimmedLine.Contains("Test", StringComparison.Ordinal))
+        {
+            return true;
+        }
+        // TODO: Implement mini-parser to correctly ignore strings (including @"" verbatim) and /* */ blocks spanning lines.
+        return false;
     }
 
     private static bool IsExemptController(string filePath)
@@ -343,4 +350,20 @@ public class CodeStandardsTests
 
         return exemptControllers.Any(exempt => filePath.Contains(exempt));
     }
+}
+
+public static class StandardsLimits
+{
+    // Defaults (baseline documented in LEEME)
+    public const int DefaultMaxDirectLoggerViolations = 70; // baseline ~59
+    public const int DefaultMaxHardcodedLogStringViolations = 40; // baseline ~35
+    public const int DefaultMaxAwaitWithoutConfigureAwaitViolations = 100;
+    public const int DefaultMaxControllerNullValidationViolations = 3;
+
+    public static int MaxDirectLoggerViolations => Get("MAX_DIRECT_LOGGER", DefaultMaxDirectLoggerViolations);
+    public static int MaxHardcodedLogStringViolations => Get("MAX_HARDCODED_LOG_STRINGS", DefaultMaxHardcodedLogStringViolations);
+    public static int MaxAwaitWithoutConfigureAwaitViolations => Get("MAX_AWAIT_NO_CONFIGUREAWAIT", DefaultMaxAwaitWithoutConfigureAwaitViolations);
+    public static int MaxControllerNullValidationViolations => Get("MAX_CONTROLLER_NULL_VALIDATION", DefaultMaxControllerNullValidationViolations);
+
+    private static int Get(string env, int fallback) => int.TryParse(Environment.GetEnvironmentVariable(env), out var v) ? v : fallback;
 }

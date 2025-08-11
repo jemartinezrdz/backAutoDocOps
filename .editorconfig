@@ -91,7 +91,7 @@ dotnet_diagnostic.CA2016.severity = warning
 
 # Memory management rules
 # CA1062: Validate arguments of public methods
-dotnet_diagnostic.CA1062.severity = warning
+dotnet_diagnostic.CA1062.severity = error
 
 # CA1063: Implement IDisposable correctly
 dotnet_diagnostic.CA1063.severity = error
@@ -146,6 +146,8 @@ dotnet_diagnostic.CA3011.severity = error
 dotnet_diagnostic.CA3012.severity = error
 
 # Performance rules
+# Logging performance (usar LoggerMessage wrappers)
+dotnet_diagnostic.CA1848.severity = error
 # CA1806: Do not ignore method results
 dotnet_diagnostic.CA1806.severity = warning
 

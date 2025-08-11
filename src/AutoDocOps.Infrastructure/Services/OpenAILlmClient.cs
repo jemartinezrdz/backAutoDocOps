@@ -7,6 +7,7 @@ using OpenAI.Chat;
 using System.ClientModel;
 using System.Runtime.CompilerServices;
 using System.Security;
+using AutoDocOps.Infrastructure.Logging;
 
 namespace AutoDocOps.Infrastructure.Services;
 
@@ -17,7 +18,9 @@ public class OpenAILlmClient : ILlmClient
 
     public OpenAILlmClient(IConfiguration configuration, ILogger<OpenAILlmClient> logger)
     {
-        _logger = logger;
+    ArgumentNullException.ThrowIfNull(configuration);
+    ArgumentNullException.ThrowIfNull(logger);
+    _logger = logger;
         
         var apiKey = configuration["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY")
             ?? throw new InvalidOperationException("OpenAI API key is not configured");
@@ -26,7 +29,7 @@ public class OpenAILlmClient : ILlmClient
         var validationResult = ApiKeyValidator.ValidateWithDetails(apiKey);
         if (!validationResult.IsValid)
         {
-            _logger.LogWarning("API key validation failed: {Reason}", validationResult.Message);
+            _logger.OpenAiApiKeyInvalid(validationResult.Message);
             throw new SecurityException($"OpenAI API key is invalid: {validationResult.Message}");
         }
         
@@ -60,7 +63,9 @@ public class OpenAILlmClient : ILlmClient
         await foreach (var update in streamingResponse)
         {
             if (cancellationToken.IsCancellationRequested)
+            {
                 yield break;
+            }
                 
             if (update.ContentUpdate.Count > 0)
             {
@@ -85,15 +90,16 @@ public class OpenAILlmClient : ILlmClient
                 new UserChatMessage(query)
             };
 
-            var response = await _chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken);
+            var response = await _chatClient.CompleteChatAsync(messages, cancellationToken: cancellationToken).ConfigureAwait(false);
             
             return response.Value.Content[0].Text;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during chat completion for query: {Query}", query);
+            _logger.OpenAiChatError(query, ex);
             return $"Error: {ex.Message}";
         }
     }
 }
+// Logging extensions moved to separate file OpenAiLogging.cs
 

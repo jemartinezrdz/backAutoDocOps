@@ -142,5 +142,24 @@ namespace AutoDocOps.WebAPI.Controllers
             Level = LogLevel.Information,
             Message = "Available endpoints - Swagger UI: /swagger, Health checks: /health")]
         internal static partial void AvailableEndpoints(this ILogger logger);
+
+        [LoggerMessage(
+            EventId = 3006,
+            Level = LogLevel.Warning,
+            Message = "Using config file for Stripe secret instead of environment variable in Production.")]
+        internal static partial void UsingConfigStripeSecret(this ILogger logger);
+
+        [LoggerMessage(
+            EventId = 3007,
+            Level = LogLevel.Information,
+            Message = "Audit log stored for Stripe event {EventType} with secret source {SecretSource}")]
+        internal static partial void StripeAuditLogged(this ILogger logger, string eventType, string secretSource);
+
+        [LoggerMessage(
+            EventId = 3008,
+            Level = LogLevel.Warning,
+            Message = "Audit log failed for Stripe event {EventType}: {Reason}")]
+        internal static partial void StripeAuditLogFailed(this ILogger logger, string eventType, string reason);
+
     }
 }

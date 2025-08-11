@@ -15,7 +15,8 @@ public class CancelGenerationHandler : IRequestHandler<CancelGenerationCommand, 
 
     public async Task<CancelGenerationResponse> Handle(CancelGenerationCommand request, CancellationToken cancellationToken)
     {
-        var passport = await _passportRepository.GetByIdAsync(request.PassportId, cancellationToken);
+    ArgumentNullException.ThrowIfNull(request);
+    var passport = await _passportRepository.GetByIdAsync(request.PassportId, cancellationToken).ConfigureAwait(false);
         
         if (passport == null)
         {
@@ -32,7 +33,7 @@ public class CancelGenerationHandler : IRequestHandler<CancelGenerationCommand, 
         passport.CompletedAt = DateTime.UtcNow;
         passport.ErrorMessage = $"Generation cancelled by user {request.CancelledBy}";
 
-        await _passportRepository.UpdateAsync(passport, cancellationToken);
+    await _passportRepository.UpdateAsync(passport, cancellationToken).ConfigureAwait(false);
 
         // Note: The background service will detect the cancelled status and stop processing
 

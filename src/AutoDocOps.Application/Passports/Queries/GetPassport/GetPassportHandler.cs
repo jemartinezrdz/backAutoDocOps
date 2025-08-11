@@ -15,7 +15,8 @@ public class GetPassportHandler : IRequestHandler<GetPassportQuery, GetPassportR
 
     public async Task<GetPassportResponse> Handle(GetPassportQuery request, CancellationToken cancellationToken)
     {
-        var passport = await _passportRepository.GetByIdAsync(request.Id, cancellationToken);
+    ArgumentNullException.ThrowIfNull(request);
+    var passport = await _passportRepository.GetByIdAsync(request.Id, cancellationToken).ConfigureAwait(false);
         
         if (passport == null)
         {

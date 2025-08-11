@@ -215,23 +215,34 @@ static async Task<IResult> HandleStripeWebhookAsync(
         return Results.BadRequest("Content-Type must be application/json");
     }
 
-    // Read body with size limit
-    using var memoryStream = new MemoryStream();
-    var buffer = new byte[4096];
-    int totalRead = 0;
-    int bytesRead;
-
-    while ((bytesRead = await request.Body.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+    // Read body with size limit using a pooled buffer to avoid large allocations.
+    var rentedBuffer = System.Buffers.ArrayPool<byte>.Shared.Rent(MaxBodyBytes);
+    try
     {
-        totalRead += bytesRead;
-        if (totalRead > MaxBodyBytes)
-        {
-            return Results.BadRequest("Request body too large");
-        }
-        await memoryStream.WriteAsync(buffer, 0, bytesRead, cancellationToken);
-    }
+        int totalRead = 0;
+        int bytesRead;
+        var bufferMemory = new Memory<byte>(rentedBuffer);
 
-    var json = Encoding.UTF8.GetString(memoryStream.ToArray());
+        while (totalRead < MaxBodyBytes && (bytesRead = await request.Body.ReadAsync(bufferMemory.Slice(totalRead), cancellationToken)) > 0)
+        {
+            totalRead += bytesRead;
+        }
+
+        // Check if there's still more data in the request body, which means it's too large.
+        if (totalRead == MaxBodyBytes)
+        {
+            if (await request.Body.ReadAsync(new byte[1], 0, 1, cancellationToken) > 0)
+            {
+                return Results.BadRequest("Request body too large");
+            }
+        }
+
+        var json = Encoding.UTF8.GetString(rentedBuffer, 0, totalRead);
+    }
+    finally
+    {
+        System.Buffers.ArrayPool<byte>.Shared.Return(rentedBuffer);
+    }
     
     // Validate Stripe signature
     var stripeSignature = request.Headers["Stripe-Signature"].FirstOrDefault();

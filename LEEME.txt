@@ -1,0 +1,99 @@
+@Copilot commented on this pull request.
+
+Pull Request Overview
+This PR implements extensive testing infrastructure improvements with new test suites, authentication/authorization, and comprehensive configuration validation. The main purpose is to enhance test coverage and add critical security features for production readiness.
+
+Implements comprehensive test coverage with builders, validators, and security-focused tests
+Adds JWT authentication/authorization with proper configuration validation
+Introduces background services for document generation with overflow protection
+Reviewed Changes
+Copilot reviewed 98 out of 99 changed files in this pull request and generated 2 comments.
+
+Show a summary per file
+File	Description
+tests/AutoDocOps.Tests/README_Testing.md	New testing guide with standards and builder patterns
+tests/AutoDocOps.Tests/Projects/Queries/GetProjectHandlerTests.cs	Unit tests for project retrieval with timeout configuration
+tests/AutoDocOps.Tests/Projects/Commands/CreateProjectHandlerTests.cs	Enhanced tests with constants and timeout protection
+tests/AutoDocOps.Tests/Passports/*	Complete passport functionality test coverage
+tests/AutoDocOps.Tests/Infrastructure/Services/*	Security-focused service tests with overflow protection
+tests/AutoDocOps.Tests/Configuration/MissingEnvTests.cs	Configuration validation tests for production safety
+src/AutoDocOps.WebAPI/Program.cs	Major enhancement with authentication, rate limiting, and webhook handling
+src/AutoDocOps.Infrastructure/*	New services including Redis cache, LLM client, and billing service
+src/AutoDocOps.Application/*	Authentication models and JWT token services
+In src/AutoDocOps.WebAPI/Program.cs:
+
+> +    using var memoryStream = new MemoryStream();
++    var buffer = new byte[4096];
++    int totalRead = 0;
++    int bytesRead;
++
++    while ((bytesRead = await request.Body.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
++    {
++        totalRead += bytesRead;
++        if (totalRead > MaxBodyBytes)
++        {
++            return Results.BadRequest("Request body too large");
++        }
++        await memoryStream.WriteAsync(buffer, 0, bytesRead, cancellationToken);
++    }
++
++    var json = Encoding.UTF8.GetString(memoryStream.ToArray());
+The webhook handler reads the entire request body into memory before processing. For large payloads near the 256KB limit, this could cause memory pressure. Consider using a streaming approach or MemoryPool for better memory management.
+
+⬇️ Suggested change
+-    using var memoryStream = new MemoryStream();
+-    var buffer = new byte[4096];
+-    int totalRead = 0;
+-    int bytesRead;
+-
+-    while ((bytesRead = await request.Body.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+-    {
+-        totalRead += bytesRead;
+-        if (totalRead > MaxBodyBytes)
+-        {
+-            return Results.BadRequest("Request body too large");
+-        }
+-        await memoryStream.WriteAsync(buffer, 0, bytesRead, cancellationToken);
+-    }
+-
+-    var json = Encoding.UTF8.GetString(memoryStream.ToArray());
++    var pool = MemoryPool<byte>.Shared;
++    using var rentedBuffer = pool.Rent(MaxBodyBytes);
++    var buffer = rentedBuffer.Memory.Slice(0, MaxBodyBytes);
++    int totalRead = 0;
++    int bytesRead;
++
++    while ((bytesRead = await request.Body.ReadAsync(buffer.Slice(totalRead, MaxBodyBytes - totalRead), cancellationToken)) > 0)
++    {
++        totalRead += bytesRead;
++        if (totalRead > MaxBodyBytes)
++        {
++            return Results.BadRequest("Request body too large");
++        }
++    }
++
++    var json = Encoding.UTF8.GetString(buffer.Slice(0, totalRead).ToArray());
+In tests/AutoDocOps.Tests/Infrastructure/Services/DocumentationGenerationServiceOverflowTests.cs:
+
+> +        // Arrange - Use TimeSpan.MaxValue which when doubled will definitely overflow
++        var largeDelay = TimeSpan.MaxValue;
++        var maxDelay = TimeSpan.FromHours(1);
++
++        // Act - This should handle overflow gracefully
++        var result = BackoffHelper.NextDelay(largeDelay, maxDelay);
++
++        // Assert - Should return max delay, not throw
++        Assert.Equal(maxDelay, result);
++    }
++
++    [Fact]
++    public void BackoffHelper_CheckedArithmetic_OnOverflow_ReturnsMax()
++    {
++        // Arrange - value chosen to overflow when doubled
++        var nearMaxTicks = long.MaxValue / 2 + 1000; 
+[nitpick] The magic number 1000 is used without explanation. Consider using a named constant or comment to explain why 1000 ticks are added to trigger the overflow condition.
+
+⬇️ Suggested change
+-        var nearMaxTicks = long.MaxValue / 2 + 1000; 
++        var nearMaxTicks = long.MaxValue / 2 + OverflowTriggerOffsetTicks;
+—

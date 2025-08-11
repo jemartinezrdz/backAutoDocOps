@@ -72,11 +72,13 @@ public class DocumentationGenerationServiceOverflowTests
         Assert.Equal(maxDelay, result);
     }
 
+    private const long OverflowTriggerOffsetTicks = 1000;
+
     [Fact]
     public void BackoffHelper_CheckedArithmetic_OnOverflow_ReturnsMax()
     {
         // Arrange - value chosen to overflow when doubled
-        var nearMaxTicks = long.MaxValue / 2 + 1000; 
+        var nearMaxTicks = long.MaxValue / 2 + OverflowTriggerOffsetTicks;
         var largeDelay = new TimeSpan(nearMaxTicks);
         var maxDelay = TimeSpan.FromDays(365);
 

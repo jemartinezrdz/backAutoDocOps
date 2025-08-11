@@ -211,7 +211,7 @@ public class DocumentationGenerationService : BackgroundService
 - **Size**: {s.SizeInBytes} bytes
 - **Created**: {s.CreatedAt:yyyy-MM-dd HH:mm:ss}
 
-```{s.Language.ToLower()}
+```{s.Language.ToLowerInvariant()}
 {(s.Content.Length > 1000 ? s.Content.Substring(0, 1000) + "..." : s.Content)}
 ```"))}
 

@@ -66,7 +66,7 @@ public static class DependencyInjection
         services.AddScoped<IBillingService, BillingService>();
 
         // Add LLM client
-        var useFakeLlm = Environment.GetEnvironmentVariable("USE_FAKE_LLM")?.ToLower() == "true";
+                var useFakeLlm = Environment.GetEnvironmentVariable("USE_FAKE_LLM")?.ToLowerInvariant() == "true";
         if (useFakeLlm)
         {
             services.AddScoped<ILlmClient, FakeLlmClient>();

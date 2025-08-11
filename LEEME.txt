@@ -1,99 +1,27 @@
-@Copilot commented on this pull request.
+El pipeline en git marco error en el test
+Error: /home/runner/work/backAutoDocOps/backAutoDocOps/src/AutoDocOps.WebAPI/Program.cs(266,51): error CS0103: The name 'json' does not exist in the current context [/home/runner/work/backAutoDocOps/backAutoDocOps/src/AutoDocOps.WebAPI/AutoDocOps.WebAPI.csproj]
+    423 Warning(s)
+    1 Error(s)
 
-Pull Request Overview
-This PR implements extensive testing infrastructure improvements with new test suites, authentication/authorization, and comprehensive configuration validation. The main purpose is to enhance test coverage and add critical security features for production readiness.
+Time Elapsed 00:00:11.94
+Error: Process completed with exit code 1.
+Ya lo corregi, te comparto el resumen y lo que necesito que me ayudes hacer
 
-Implements comprehensive test coverage with builders, validators, and security-focused tests
-Adds JWT authentication/authorization with proper configuration validation
-Introduces background services for document generation with overflow protection
-Reviewed Changes
-Copilot reviewed 98 out of 99 changed files in this pull request and generated 2 comments.
+He abordado el error y parte de los warnings clave:
 
-Show a summary per file
-File	Description
-tests/AutoDocOps.Tests/README_Testing.md	New testing guide with standards and builder patterns
-tests/AutoDocOps.Tests/Projects/Queries/GetProjectHandlerTests.cs	Unit tests for project retrieval with timeout configuration
-tests/AutoDocOps.Tests/Projects/Commands/CreateProjectHandlerTests.cs	Enhanced tests with constants and timeout protection
-tests/AutoDocOps.Tests/Passports/*	Complete passport functionality test coverage
-tests/AutoDocOps.Tests/Infrastructure/Services/*	Security-focused service tests with overflow protection
-tests/AutoDocOps.Tests/Configuration/MissingEnvTests.cs	Configuration validation tests for production safety
-src/AutoDocOps.WebAPI/Program.cs	Major enhancement with authentication, rate limiting, and webhook handling
-src/AutoDocOps.Infrastructure/*	New services including Redis cache, LLM client, and billing service
-src/AutoDocOps.Application/*	Authentication models and JWT token services
-In src/AutoDocOps.WebAPI/Program.cs:
+Resumen acciones:
 
-> +    using var memoryStream = new MemoryStream();
-+    var buffer = new byte[4096];
-+    int totalRead = 0;
-+    int bytesRead;
-+
-+    while ((bytesRead = await request.Body.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
-+    {
-+        totalRead += bytesRead;
-+        if (totalRead > MaxBodyBytes)
-+        {
-+            return Results.BadRequest("Request body too large");
-+        }
-+        await memoryStream.WriteAsync(buffer, 0, bytesRead, cancellationToken);
-+    }
-+
-+    var json = Encoding.UTF8.GetString(memoryStream.ToArray());
-The webhook handler reads the entire request body into memory before processing. For large payloads near the 256KB limit, this could cause memory pressure. Consider using a streaming approach or MemoryPool for better memory management.
+Eliminé la configuración global de cobertura (CollectCoverage / Threshold) de Directory.Build.props que podía forzar exit code 1 en build normales.
+Moví los thresholds de cobertura al proyecto de tests para que sólo se apliquen al ejecutar pruebas.
+Corregí handlers con CA1062 y CA2007 (CreateProjectHandler y DeletePassportHandler) usando ArgumentNullException.ThrowIfNull y ConfigureAwait(false).
+Arreglé el error CS0103 en Program.cs (variable json fuera de scope) y normalicé StartsWith con StringComparison.
+Añadí ConfigureAwait(false) en varias esperas del streaming y webhook.
+Build ahora compila (0 errores). Solo quedan warnings (principalmente CA1848, CA2007 restantes en controllers y Program, CA1062 en dos acciones de controller, y CA1304/CA1311 por cultura).
 
-⬇️ Suggested change
--    using var memoryStream = new MemoryStream();
--    var buffer = new byte[4096];
--    int totalRead = 0;
--    int bytesRead;
--
--    while ((bytesRead = await request.Body.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
--    {
--        totalRead += bytesRead;
--        if (totalRead > MaxBodyBytes)
--        {
--            return Results.BadRequest("Request body too large");
--        }
--        await memoryStream.WriteAsync(buffer, 0, bytesRead, cancellationToken);
--    }
--
--    var json = Encoding.UTF8.GetString(memoryStream.ToArray());
-+    var pool = MemoryPool<byte>.Shared;
-+    using var rentedBuffer = pool.Rent(MaxBodyBytes);
-+    var buffer = rentedBuffer.Memory.Slice(0, MaxBodyBytes);
-+    int totalRead = 0;
-+    int bytesRead;
-+
-+    while ((bytesRead = await request.Body.ReadAsync(buffer.Slice(totalRead, MaxBodyBytes - totalRead), cancellationToken)) > 0)
-+    {
-+        totalRead += bytesRead;
-+        if (totalRead > MaxBodyBytes)
-+        {
-+            return Results.BadRequest("Request body too large");
-+        }
-+    }
-+
-+    var json = Encoding.UTF8.GetString(buffer.Slice(0, totalRead).ToArray());
-In tests/AutoDocOps.Tests/Infrastructure/Services/DocumentationGenerationServiceOverflowTests.cs:
+Ayudame aplicando todos estos puntos por favor
 
-> +        // Arrange - Use TimeSpan.MaxValue which when doubled will definitely overflow
-+        var largeDelay = TimeSpan.MaxValue;
-+        var maxDelay = TimeSpan.FromHours(1);
-+
-+        // Act - This should handle overflow gracefully
-+        var result = BackoffHelper.NextDelay(largeDelay, maxDelay);
-+
-+        // Assert - Should return max delay, not throw
-+        Assert.Equal(maxDelay, result);
-+    }
-+
-+    [Fact]
-+    public void BackoffHelper_CheckedArithmetic_OnOverflow_ReturnsMax()
-+    {
-+        // Arrange - value chosen to overflow when doubled
-+        var nearMaxTicks = long.MaxValue / 2 + 1000; 
-[nitpick] The magic number 1000 is used without explanation. Consider using a named constant or comment to explain why 1000 ticks are added to trigger the overflow condition.
-
-⬇️ Suggested change
--        var nearMaxTicks = long.MaxValue / 2 + 1000; 
-+        var nearMaxTicks = long.MaxValue / 2 + OverflowTriggerOffsetTicks;
-—
+Introducir LoggerMessage (source-generated o métodos estáticos) para reducir los CA1848 más importantes (en paths críticos).
+Añadir ArgumentNullException.ThrowIfNull en los métodos de controllers marcados con CA1062.
+Reemplazar ToLower() por ToLowerInvariant() o ToLower(CultureInfo.InvariantCulture) y StartsWith/EndsWith con StringComparison adecuados donde falte.
+Decidir si realmente quieres aplicar ConfigureAwait(false) en todos los awaits (en ASP.NET Core no es estrictamente necesario; podríamos suprimir CA2007 globalmente para claridad).
+Opcional: crear Partial static class Logging con definiciones de LoggerMessage para las frases repetidas.

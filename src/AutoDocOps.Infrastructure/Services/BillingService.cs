@@ -203,7 +203,7 @@ public class BillingService : IBillingService
 
     private string GetStripePriceId(string planId)
     {
-        return planId.ToLower() switch
+                return planId.ToLowerInvariant() switch
         {
             "starter" => _configuration["Stripe:Plans:Starter:PriceId"] ?? "price_starter_default",
             "growth" => _configuration["Stripe:Plans:Growth:PriceId"] ?? "price_growth_default",

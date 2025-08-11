@@ -37,7 +37,7 @@ public class PassportsController : ControllerBase
     {
         try
         {
-            _logger.LogInformation("Retrieving passport {PassportId}", id);
+            _logger.RetrievingPassport(id);
             
             var query = new GetPassportQuery(id);
             var result = await _mediator.Send(query);
@@ -59,7 +59,7 @@ public class PassportsController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            _logger.LogWarning(ex, "Passport {PassportId} not found", id);
+            _logger.PassportNotFound(id, ex);
             
             return NotFound(new ProblemDetails
             {
@@ -70,7 +70,7 @@ public class PassportsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving passport {PassportId}", id);
+            _logger.ErrorRetrievingPassport(id, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
@@ -120,7 +120,7 @@ public class PassportsController : ControllerBase
                 });
             }
 
-            _logger.LogInformation("Retrieving passports for project {ProjectId}", projectId);
+            _logger.RetrievingPassportsForProject(projectId);
             
             var query = new GetPassportsByProjectQuery(projectId, page, pageSize);
             var result = await _mediator.Send(query);
@@ -149,7 +149,7 @@ public class PassportsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving passports for project {ProjectId}", projectId);
+            _logger.ErrorRetrievingPassportsForProject(projectId, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
@@ -173,7 +173,7 @@ public class PassportsController : ControllerBase
     {
         try
         {
-            _logger.LogInformation("Deleting passport {PassportId}", id);
+            _logger.DeletingPassport(id);
             
             var command = new DeletePassportCommand(id);
             var result = await _mediator.Send(command);
@@ -192,7 +192,7 @@ public class PassportsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting passport {PassportId}", id);
+            _logger.ErrorDeletingPassport(id, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
@@ -217,13 +217,13 @@ public class PassportsController : ControllerBase
     {
         try
         {
-            _logger.LogInformation("Downloading passport {PassportId} in format {Format}", id, format);
+            _logger.DownloadingPassport(id, format);
             
             var query = new GetPassportQuery(id);
             var result = await _mediator.Send(query);
             
             var fileName = $"passport-{result.Version}.{result.Format}";
-            var contentType = result.Format.ToLower() switch
+                        var contentType = result.Format.ToLowerInvariant() switch
             {
                 "pdf" => "application/pdf",
                 "html" => "text/html",
@@ -237,7 +237,7 @@ public class PassportsController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            _logger.LogWarning(ex, "Passport {PassportId} not found", id);
+            _logger.PassportNotFound(id, ex);
             
             return NotFound(new ProblemDetails
             {
@@ -248,7 +248,7 @@ public class PassportsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error downloading passport {PassportId}", id);
+            _logger.ErrorDownloadingPassport(id, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {

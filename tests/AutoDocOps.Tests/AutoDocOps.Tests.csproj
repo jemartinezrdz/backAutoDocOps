@@ -13,6 +13,9 @@
   <CoverletOutput>../TestResults/coverage/</CoverletOutput>
   <!-- Excluir ensamblajes de test y código generado -->
   <Exclude>[xunit.*]*,[*.Tests]*,[*]AutoMapper.*</Exclude>
+  <!-- Coverage thresholds (only enforced when running tests) -->
+  <Threshold>80</Threshold>
+  <ThresholdType>line,branch,method</ThresholdType>
   </PropertyGroup>
 
   <ItemGroup>

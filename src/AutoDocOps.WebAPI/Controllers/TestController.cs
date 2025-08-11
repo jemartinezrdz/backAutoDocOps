@@ -30,6 +30,7 @@ public class TestController : ControllerBase
     [HttpGet("cache/{key}")]
     public async Task<IActionResult> GetFromCache(string key)
     {
+        ArgumentNullException.ThrowIfNull(key);
         try
         {
             var value = await _cacheService.GetAsync<string>(key);
@@ -71,6 +72,7 @@ public class TestController : ControllerBase
     [HttpDelete("cache/{key}")]
     public async Task<IActionResult> RemoveFromCache(string key)
     {
+        ArgumentNullException.ThrowIfNull(key);
         try
         {
             await _cacheService.RemoveAsync(key);

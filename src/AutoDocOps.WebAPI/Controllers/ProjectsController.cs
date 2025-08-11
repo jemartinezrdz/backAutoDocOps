@@ -77,14 +77,13 @@ public class ProjectsController : ControllerBase
             var query = new GetProjectsQuery(organizationId, page, pageSize);
             var result = await _mediator.Send(query);
 
-            _logger.LogInformation("Retrieved {Count} projects for organization {OrganizationId}", 
-                result.Projects.Count(), organizationId);
+            _logger.RetrievedProjects(result.Projects.Count(), organizationId);
 
             return Ok(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving projects for organization {OrganizationId}", organizationId);
+            _logger.ErrorRetrievingProjects(organizationId, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
@@ -108,7 +107,7 @@ public class ProjectsController : ControllerBase
     {
         try
         {
-            _logger.LogInformation("Retrieving project {ProjectId}", id);
+            _logger.RetrievingProject(id);
             
             var query = new GetProjectQuery(id);
             var result = await _mediator.Send(query);
@@ -117,7 +116,7 @@ public class ProjectsController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            _logger.LogWarning(ex, "Project {ProjectId} not found", id);
+            _logger.ProjectNotFound(id, ex);
             
             return NotFound(new ProblemDetails
             {
@@ -128,7 +127,7 @@ public class ProjectsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving project {ProjectId}", id);
+            _logger.ErrorRetrievingProject(id, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
@@ -150,6 +149,7 @@ public class ProjectsController : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<CreateProjectResponse>> CreateProject([FromBody] CreateProjectRequest request)
     {
+        ArgumentNullException.ThrowIfNull(request);
         try
         {
             var command = new CreateProjectCommand(
@@ -163,8 +163,7 @@ public class ProjectsController : ControllerBase
 
             var result = await _mediator.Send(command);
 
-            _logger.LogInformation("Created project {ProjectId} for organization {OrganizationId}", 
-                result.Id, result.OrganizationId);
+            _logger.CreatedProject(result.Id, result.OrganizationId);
 
             return CreatedAtAction(
                 nameof(GetProject),
@@ -173,7 +172,7 @@ public class ProjectsController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            _logger.LogWarning(ex, "Invalid project creation request");
+            _logger.InvalidProjectCreationRequest(ex);
             
             return BadRequest(new ProblemDetails
             {
@@ -184,7 +183,7 @@ public class ProjectsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating project");
+            _logger.ErrorCreatingProject(ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {

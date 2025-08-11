@@ -37,16 +37,17 @@ public class GenerateController : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<GeneratePassportResponse>> GenerateDocumentation([FromBody] GenerateDocumentationRequest request)
     {
+        ArgumentNullException.ThrowIfNull(request);
         try
         {
-            var command = new GeneratePassportCommand(
+                        var command = new GeneratePassportCommand(
                 request.ProjectId,
                 request.Version ?? "1.0.0",
                 request.Format ?? "markdown",
                 request.GeneratedBy
             );
 
-            var result = await _mediator.Send(command);
+            var result = await _mediator.Send(command).ConfigureAwait(false);
 
             _logger.LogInformation("Started documentation generation for project {ProjectId}, passport {PassportId}", 
                 request.ProjectId, result.Id);

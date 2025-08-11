@@ -5,6 +5,7 @@ using AutoDocOps.Application.Authentication.Models;
 using AutoDocOps.Application.Common.Models;
 using AutoDocOps.Infrastructure;
 using AutoDocOps.WebAPI.Models;
+using AutoDocOps.WebAPI.Controllers;
 using Asp.Versioning;
 using Asp.Versioning.ApiExplorer;
 using Microsoft.OpenApi.Models;
@@ -210,12 +211,13 @@ static async Task<IResult> HandleStripeWebhookAsync(
     const int MaxBodyBytes = 256 * 1024; // 256 KB limit
 
     // Validate content type
-    if (!request.ContentType?.StartsWith("application/json") ?? true)
+    if (!request.ContentType?.StartsWith("application/json", StringComparison.OrdinalIgnoreCase) ?? true)
     {
         return Results.BadRequest("Content-Type must be application/json");
     }
 
     // Read body with size limit using a pooled buffer to avoid large allocations.
+    string json;
     var rentedBuffer = System.Buffers.ArrayPool<byte>.Shared.Rent(MaxBodyBytes);
     try
     {
@@ -223,7 +225,7 @@ static async Task<IResult> HandleStripeWebhookAsync(
         int bytesRead;
         var bufferMemory = new Memory<byte>(rentedBuffer);
 
-        while (totalRead < MaxBodyBytes && (bytesRead = await request.Body.ReadAsync(bufferMemory.Slice(totalRead), cancellationToken)) > 0)
+    while (totalRead < MaxBodyBytes && (bytesRead = await request.Body.ReadAsync(bufferMemory.Slice(totalRead), cancellationToken).ConfigureAwait(false)) > 0)
         {
             totalRead += bytesRead;
         }
@@ -231,13 +233,13 @@ static async Task<IResult> HandleStripeWebhookAsync(
         // Check if there's still more data in the request body, which means it's too large.
         if (totalRead == MaxBodyBytes)
         {
-            if (await request.Body.ReadAsync(new byte[1], 0, 1, cancellationToken) > 0)
+            if (await request.Body.ReadAsync(new byte[1], 0, 1, cancellationToken).ConfigureAwait(false) > 0)
             {
                 return Results.BadRequest("Request body too large");
             }
         }
 
-        var json = Encoding.UTF8.GetString(rentedBuffer, 0, totalRead);
+        json = Encoding.UTF8.GetString(rentedBuffer, 0, totalRead);
     }
     finally
     {
@@ -256,7 +258,7 @@ static async Task<IResult> HandleStripeWebhookAsync(
     
     if (string.IsNullOrWhiteSpace(webhookSecret))
     {
-        logger.LogError("STRIPE_WEBHOOK_SECRET environment variable is not configured");
+        logger.StripeWebhookSecretNotConfigured();
         return Results.Problem("Webhook secret not configured", statusCode: 500);
     }
 
@@ -267,18 +269,18 @@ static async Task<IResult> HandleStripeWebhookAsync(
     }
     catch (Exception ex)
     {
-        logger.LogWarning(ex, "Invalid Stripe webhook signature");
+        logger.InvalidStripeWebhookSignature(ex);
         return Results.BadRequest("Invalid signature");
     }
 
     try
     {
-        await billingService.HandleAsync(stripeEvent, cancellationToken);
+    await billingService.HandleAsync(stripeEvent, cancellationToken).ConfigureAwait(false);
         return Results.Ok();
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Error processing Stripe webhook: {EventType}", stripeEvent.Type);
+        logger.ErrorProcessingStripeWebhook(stripeEvent.Type, ex);
         return Results.StatusCode(500);
     }
 }
@@ -297,10 +299,10 @@ app.MapPost("/chat/stream", async (ChatRequest request, ILlmClient llmClient, Ht
     
     try
     {
-        await foreach (var chunk in llmClient.StreamChatAsync(request.Query, context.RequestAborted))
+        await foreach (var chunk in llmClient.StreamChatAsync(request.Query, context.RequestAborted).ConfigureAwait(false))
         {
-            await context.Response.WriteAsync(chunk, context.RequestAborted);
-            await context.Response.Body.FlushAsync(context.RequestAborted);
+            await context.Response.WriteAsync(chunk, context.RequestAborted).ConfigureAwait(false);
+            await context.Response.Body.FlushAsync(context.RequestAborted).ConfigureAwait(false);
         }
     }
     catch (OperationCanceledException)
@@ -309,8 +311,8 @@ app.MapPost("/chat/stream", async (ChatRequest request, ILlmClient llmClient, Ht
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Chat streaming error: {Message}", ex.Message);
-        await context.Response.WriteAsync($"Error: {ex.Message}", context.RequestAborted);
+        logger.ChatStreamingError(ex.Message, ex);
+    await context.Response.WriteAsync($"Error: {ex.Message}", context.RequestAborted).ConfigureAwait(false);
     }
     
     return Results.Empty;
@@ -340,7 +342,7 @@ app.MapGet("/", () => new
 app.MapHealthChecks("/health");
 
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
-logger.LogInformation("AutoDocOps API starting in {Environment} environment", app.Environment.EnvironmentName);
-logger.LogInformation("Available endpoints - Swagger UI: /swagger, Health checks: /health");
+logger.ApiStarting(app.Environment.EnvironmentName);
+logger.AvailableEndpoints();
 
-await app.RunAsync();
+await app.RunAsync().ConfigureAwait(false);

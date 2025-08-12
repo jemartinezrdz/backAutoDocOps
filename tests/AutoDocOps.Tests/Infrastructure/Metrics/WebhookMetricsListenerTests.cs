@@ -2,6 +2,9 @@ using System.Diagnostics.Metrics;
 using System.Threading.Tasks;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace AutoDocOps.Tests.Infrastructure.Metrics;
@@ -13,7 +16,24 @@ public class WebhookMetricsListenerTests : IClassFixture<WebApplicationFactory<P
     public WebhookMetricsListenerTests(WebApplicationFactory<Program> factory)
     {
         ArgumentNullException.ThrowIfNull(factory);
-        _factory = factory.WithWebHostBuilder(_ => { });
+        _factory = factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration((context, config) =>
+            {
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["EnvironmentName"] = "Test",
+                    ["Features:EnableBilling"] = "false",
+                    ["Features:EnableSession"] = "false",
+                    ["Features:EnableDocumentationGeneration"] = "false",
+                    ["Caching:Provider"] = "Memory",
+                    ["Stripe:SecretKey"] = "sk_test_dummy_for_tests_0123456789",
+                    ["Stripe:WebhookSecret"] = "whsec_test_dummy_for_tests_0123456789",
+                    ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=autodocops_test;Username=postgres;Password=postgres"
+                });
+            });
+        });
     }
 
     [Fact]
@@ -25,7 +45,7 @@ public class WebhookMetricsListenerTests : IClassFixture<WebApplicationFactory<P
         {
             InstrumentPublished = (instrument, l) =>
             {
-                if (instrument.Meter.Name == "AutoDocOps.Webhook" && instrument.Name == "stripe_webhook_requests_total")
+                if (instrument.Meter.Name == "AutoDocOps.Webhook" && instrument.Name == "webhook_requests_total")
                 {
                     l.EnableMeasurementEvents(instrument);
                 }
@@ -33,7 +53,7 @@ public class WebhookMetricsListenerTests : IClassFixture<WebApplicationFactory<P
         };
         listener.SetMeasurementEventCallback<int>((instrument, value, tags, state) =>
         {
-            if (instrument.Name == "stripe_webhook_requests_total")
+            if (instrument.Name == "webhook_requests_total")
             {
                 System.Threading.Interlocked.Add(ref seen, value);
             }

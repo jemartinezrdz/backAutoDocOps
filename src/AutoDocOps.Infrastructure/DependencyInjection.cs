@@ -30,7 +30,7 @@ namespace AutoDocOps.Infrastructure;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration, IHostEnvironment? environment = null)
     {
     ArgumentNullException.ThrowIfNull(services);
     ArgumentNullException.ThrowIfNull(configuration);
@@ -57,20 +57,29 @@ public static class DependencyInjection
             }
         });
 
-        // Add Redis Cache
-        var redisConnectionString = configuration.GetConnectionString("Redis") ?? "localhost:6379";
-        services.AddStackExchangeRedisCache(options =>
+        // Cache/Session configuration
+        var provider = configuration.GetValue<string>("Caching:Provider");
+        if (environment?.IsEnvironment("Test") == true || string.Equals(provider, "Memory", StringComparison.OrdinalIgnoreCase))
         {
-            options.Configuration = redisConnectionString;
-            options.InstanceName = "AutoDocOps";
-        });
+            services.AddDistributedMemoryCache();
+            services.AddMemoryCache();
+            services.AddScoped<ICacheService, Services.MemoryCacheService>();
+        }
+        else
+        {
+            var redisConnectionString = configuration.GetConnectionString("Redis") ?? "localhost:6379";
+            services.AddStackExchangeRedisCache(options =>
+            {
+                options.Configuration = redisConnectionString;
+                options.InstanceName = "AutoDocOps";
+            });
 
-        // Add Redis ConnectionMultiplexer for pattern-based operations
-        services.AddSingleton<IConnectionMultiplexer>(provider =>
-            ConnectionMultiplexer.Connect(redisConnectionString));
+            // Add Redis ConnectionMultiplexer for pattern-based operations
+            services.AddSingleton<IConnectionMultiplexer>(provider =>
+                ConnectionMultiplexer.Connect(redisConnectionString));
 
-        // Add cache service
-        services.AddScoped<ICacheService, RedisCacheService>();
+            services.AddScoped<ICacheService, RedisCacheService>();
+        }
 
         // Resilient HttpClient for billing-related outbound calls (placeholder for future external integrations)
         var retryPolicy = HttpPolicyExtensions
@@ -87,11 +96,22 @@ public static class DependencyInjection
             .AddPolicyHandler(retryPolicy)
             .AddPolicyHandler(circuitBreakerPolicy);
 
-    // Stripe client singleton registered via interface for easier testing
-    services.AddSingleton<IStripeClient>(_ => new StripeClient(configuration["Stripe:SecretKey"] ?? string.Empty));
-
-        // Add billing service
-    services.AddScoped<IBillingService, Services.BillingService>();
+        // Billing configuration
+        var enableBilling = configuration.GetValue("Features:EnableBilling", false);
+        var stripeKey = configuration["Stripe:SecretKey"];
+        if (enableBilling && !string.IsNullOrWhiteSpace(stripeKey))
+        {
+            services.AddSingleton<IStripeClient>(_ => new StripeClient(stripeKey));
+            services.AddScoped<IBillingService, Services.BillingService>();
+        }
+        else
+        {
+            services.AddScoped<IBillingService, Services.NullBillingService>();
+        }
+        
+        // Add webhook metrics
+        services.AddSingleton<IWebhookMetrics, Monitoring.WebhookMetrics>();
+        
     services.AddSingleton<ISecretSourceProvider, SecretSourceProvider>();
         services.AddSingleton(Channel.CreateBounded<BillingAuditLog>(new BoundedChannelOptions(1000)
         {

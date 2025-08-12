@@ -40,7 +40,7 @@ builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Creat
 builder.Services.AddAutoMapper(typeof(ProjectProfile));
 
 // Add Infrastructure (includes authentication)
-builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 
 // Strict validation of critical configuration (fail-fast)
 builder.Services.AddOptions<JwtSettings>()
@@ -133,14 +133,17 @@ builder.Services.AddCors(options =>
 });
 
 // Add distributed sessions
-builder.Services.AddSession(options =>
+if (builder.Configuration.GetValue("Features:EnableSession", false))
 {
-    options.IdleTimeout = TimeSpan.FromHours(8);
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-    options.Cookie.SameSite = SameSiteMode.None;
-    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-});
+    builder.Services.AddSession(options =>
+    {
+        options.IdleTimeout = TimeSpan.FromHours(8);
+        options.Cookie.HttpOnly = true;
+        options.Cookie.IsEssential = true;
+        options.Cookie.SameSite = SameSiteMode.None;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    });
+}
 
 // Add health checks
 builder.Services.AddHealthChecks();
@@ -236,8 +239,11 @@ app.UseCors();
 // Add rate limiting middleware
 app.UseRateLimiter();
 
-// Add session middleware
-app.UseSession();
+// Add session middleware (conditional)
+if (builder.Configuration.GetValue("Features:EnableSession", false))
+{
+    app.UseSession();
+}
 
 // Add authentication & authorization middleware
 app.UseAuthentication();
@@ -270,21 +276,21 @@ static async Task<IResult> HandleStripeWebhookAsync(
     IBillingService billingService,
     ISecretSourceProvider secretSourceProvider,
     IBillingAuditService billingAudit,
+    AutoDocOps.Infrastructure.Monitoring.IWebhookMetrics webhookMetrics,
     CancellationToken parentToken = default)
 {
     const int MaxBodyBytes = 256 * 1024; // 256 KiB hard limit
     var ct = parentToken; // Timeout ahora via middleware WithRequestTimeout
 
     var sw = Stopwatch.StartNew();
-    // No contamos "started" para mantener solo ok|fail
+    
+    // Increment request counter early - this is the key fix
+    webhookMetrics.ObserveRequest("stripe");
 
     // Content-Type validation early
     if (!request.ContentType?.StartsWith("application/json", StringComparison.OrdinalIgnoreCase) ?? true)
     {
-        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.UnsupportedMedia));
-        WebhookMetrics.Requests.Add(1,
-            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
-            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.UnsupportedMedia));
+        webhookMetrics.ObserveInvalid("stripe", "content_type");
         return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
     }
 
@@ -292,18 +298,12 @@ static async Task<IResult> HandleStripeWebhookAsync(
     var (ok, body, tooLarge) = await ReadBodyAtMostAsync(request, MaxBodyBytes, ct).ConfigureAwait(false);
     if (tooLarge)
     {
-        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.TooLarge));
-        WebhookMetrics.Requests.Add(1,
-            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
-            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.TooLarge));
+        webhookMetrics.ObserveInvalid("stripe", "size");
         return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
     }
     if (!ok)
     {
-        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Empty));
-        WebhookMetrics.Requests.Add(1,
-            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
-            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Empty));
+        webhookMetrics.ObserveInvalid("stripe", "empty");
         return Results.BadRequest("Invalid or empty payload.");
     }
 
@@ -311,10 +311,7 @@ static async Task<IResult> HandleStripeWebhookAsync(
     var stripeSignature = request.Headers["Stripe-Signature"].FirstOrDefault();
     if (string.IsNullOrWhiteSpace(stripeSignature))
     {
-        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Signature));
-        WebhookMetrics.Requests.Add(1,
-            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
-            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Signature));
+        webhookMetrics.ObserveInvalid("stripe", "signature");
         return Results.BadRequest("Missing Stripe signature");
     }
 
@@ -324,10 +321,7 @@ static async Task<IResult> HandleStripeWebhookAsync(
     if (string.IsNullOrWhiteSpace(webhookSecret))
     {
         logger.StripeWebhookSecretNotConfigured();
-        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Other));
-        WebhookMetrics.Requests.Add(1,
-            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
-            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Other));
+        webhookMetrics.ObserveInvalid("stripe", "config");
         return Results.Problem("Webhook secret not configured", statusCode: StatusCodes.Status500InternalServerError);
     }
     if (envSecret is null && request.HttpContext.RequestServices.GetRequiredService<IHostEnvironment>().IsProduction())
@@ -343,10 +337,7 @@ static async Task<IResult> HandleStripeWebhookAsync(
     catch (Exception ex)
     {
         logger.InvalidStripeWebhookSignature(ex);
-        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Signature));
-        WebhookMetrics.Requests.Add(1,
-            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
-            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Signature));
+        webhookMetrics.ObserveInvalid("stripe", "signature");
         return Results.BadRequest("Invalid signature");
     }
 
@@ -365,31 +356,23 @@ static async Task<IResult> HandleStripeWebhookAsync(
             logger.StripeAuditLogFailed(stripeEvent.Type, ex.Message);
         }
 
-        WebhookMetrics.Requests.Add(1,
-            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Ok));
+        webhookMetrics.ObserveProcessed("stripe", "ok");
         return Results.Ok();
     }
     catch (OperationCanceledException) when (ct.IsCancellationRequested)
     {
-        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Timeout));
-        WebhookMetrics.Requests.Add(1,
-            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
-            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Timeout));
+        webhookMetrics.ObserveInvalid("stripe", "timeout");
         return Results.StatusCode(StatusCodes.Status504GatewayTimeout);
     }
     catch (Exception ex)
     {
         logger.ErrorProcessingStripeWebhook(stripeEvent.Type, ex);
-        WebhookMetrics.Failures.Add(1, new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Other));
-        WebhookMetrics.Requests.Add(1,
-            new KeyValuePair<string, object?>(MetricTags.Result, MetricTags.Fail),
-            new KeyValuePair<string, object?>(MetricTags.Reason, MetricTags.Reasons.Other));
+        webhookMetrics.ObserveInvalid("stripe", "other");
         return Results.StatusCode(StatusCodes.Status500InternalServerError);
     }
     finally
     {
         sw.Stop();
-    WebhookMetrics.LatencySeconds.Record(sw.Elapsed.TotalSeconds);
     }
 }
 

@@ -4,6 +4,7 @@ using AutoDocOps.Application.Passports.Commands.CancelGeneration;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 
@@ -18,6 +19,35 @@ public class GenerateController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly ILogger<GenerateController> _logger;
+
+    // LoggerMessage delegates for performance optimization
+    private static readonly Action<ILogger, Guid, Guid, Exception?> LogDocumentationStarted =
+        LoggerMessage.Define<Guid, Guid>(LogLevel.Information, new EventId(1, "DocumentationStarted"), 
+            "Started documentation generation for project {ProjectId}, passport {PassportId}");
+
+    private static readonly Action<ILogger, Guid, Exception?> LogInvalidRequest =
+        LoggerMessage.Define<Guid>(LogLevel.Warning, new EventId(2, "InvalidRequest"),
+            "Invalid documentation generation request for project {ProjectId}");
+
+    private static readonly Action<ILogger, Guid, Exception?> LogGenerationError =
+        LoggerMessage.Define<Guid>(LogLevel.Error, new EventId(3, "GenerationError"),
+            "Error generating documentation for project {ProjectId}");
+
+    private static readonly Action<ILogger, Guid, Exception?> LogRetrievingStatus =
+        LoggerMessage.Define<Guid>(LogLevel.Information, new EventId(4, "RetrievingStatus"),
+            "Retrieving generation status for project {ProjectId}");
+
+    private static readonly Action<ILogger, Guid, Exception?> LogStatusError =
+        LoggerMessage.Define<Guid>(LogLevel.Error, new EventId(5, "StatusError"),
+            "Error retrieving generation status for project {ProjectId}");
+
+    private static readonly Action<ILogger, Guid, Exception?> LogCancellingGeneration =
+        LoggerMessage.Define<Guid>(LogLevel.Information, new EventId(6, "CancellingGeneration"),
+            "Cancelling documentation generation for project {ProjectId}");
+
+    private static readonly Action<ILogger, Guid, Exception?> LogCancelError =
+        LoggerMessage.Define<Guid>(LogLevel.Error, new EventId(7, "CancelError"),
+            "Error cancelling generation for project {ProjectId}");
 
     public GenerateController(IMediator mediator, ILogger<GenerateController> logger)
     {
@@ -49,8 +79,7 @@ public class GenerateController : ControllerBase
 
             var result = await _mediator.Send(command).ConfigureAwait(false);
 
-            _logger.LogInformation("Started documentation generation for project {ProjectId}, passport {PassportId}", 
-                request.ProjectId, result.Id);
+            LogDocumentationStarted(_logger, request.ProjectId, result.Id, null);
 
             // Return 202 Accepted since this is an async operation
             Response.Headers.Append("Location", $"/api/v1/passports/{result.Id}");
@@ -58,7 +87,7 @@ public class GenerateController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            _logger.LogWarning(ex, "Invalid documentation generation request for project {ProjectId}", request.ProjectId);
+            LogInvalidRequest(_logger, request.ProjectId, ex);
             
             return BadRequest(new ProblemDetails
             {
@@ -69,7 +98,7 @@ public class GenerateController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error generating documentation for project {ProjectId}", request.ProjectId);
+            LogGenerationError(_logger, request.ProjectId, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
@@ -93,10 +122,13 @@ public class GenerateController : ControllerBase
     {
         try
         {
-            _logger.LogInformation("Retrieving generation status for project {ProjectId}", projectId);
+            LogRetrievingStatus(_logger, projectId, null);
             
-            // Get the latest passport for the project to check status
+            // Get the latest passport for the project to check status  
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
             var passports = await _mediator.Send(new AutoDocOps.Application.Passports.Queries.GetPassportsByProject.GetPassportsByProjectQuery(projectId, 1, 1));
+            #pragma warning restore CA2007
             
             if (!passports.Passports.Any())
             {
@@ -110,7 +142,10 @@ public class GenerateController : ControllerBase
 
             var latestPassport = passports.Passports.First();
             var query = new GetGenerationStatusQuery(latestPassport.Id);
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
             var result = await _mediator.Send(query);
+            #pragma warning restore CA2007
             
             var status = new GenerationStatusResponse(
                 projectId,
@@ -127,7 +162,7 @@ public class GenerateController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving generation status for project {ProjectId}", projectId);
+            LogStatusError(_logger, projectId, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
@@ -151,10 +186,13 @@ public class GenerateController : ControllerBase
     {
         try
         {
-            _logger.LogInformation("Cancelling documentation generation for project {ProjectId}", projectId);
+            LogCancellingGeneration(_logger, projectId, null);
             
             // Get the latest generating passport for the project
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
             var passports = await _mediator.Send(new AutoDocOps.Application.Passports.Queries.GetPassportsByProject.GetPassportsByProjectQuery(projectId, 1, 1));
+            #pragma warning restore CA2007
             
             if (!passports.Passports.Any())
             {
@@ -181,7 +219,10 @@ public class GenerateController : ControllerBase
             }
             
             var command = new CancelGenerationCommand(latestPassport.Id, cancelledBy);
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
             var result = await _mediator.Send(command);
+            #pragma warning restore CA2007
             
             if (!result.Success)
             {
@@ -197,7 +238,7 @@ public class GenerateController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error cancelling generation for project {ProjectId}", projectId);
+            LogCancelError(_logger, projectId, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {

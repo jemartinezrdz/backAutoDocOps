@@ -16,7 +16,7 @@ public class FakeLlmClient : ILlmClient
                 yield break;
                 
             yield return word + " ";
-            await Task.Delay(100, cancellationToken); // Simular delay de streaming
+            await Task.Delay(100, cancellationToken).ConfigureAwait(false); // Simular delay de streaming
         }
         
         yield return "\n\nEsta es una respuesta generada por el cliente LLM falso para propósitos de testing.";
@@ -24,7 +24,7 @@ public class FakeLlmClient : ILlmClient
 
     public async Task<string> ChatAsync(string query, CancellationToken cancellationToken = default)
     {
-        await Task.Delay(500, cancellationToken); // Simular procesamiento
+        await Task.Delay(500, cancellationToken).ConfigureAwait(false); // Simular procesamiento
         
         return $"Respuesta simulada para: '{query}'. Esta es una respuesta generada por el cliente LLM falso para propósitos de testing.";
     }

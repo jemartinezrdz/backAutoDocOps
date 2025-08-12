@@ -14,64 +14,49 @@ public class BillingServiceSecurityTests
     private readonly Mock<ILogger<BillingService>> _mockLogger;
     private readonly Mock<IConfiguration> _mockConfiguration;
     private readonly BillingService _billingService;
+    private readonly Mock<Stripe.IStripeClient> _mockStripeClient;
 
     public BillingServiceSecurityTests()
     {
         _mockLogger = new Mock<ILogger<BillingService>>();
-        _mockConfiguration = new Mock<IConfiguration>();
+    _mockConfiguration = new Mock<IConfiguration>();
+    _mockStripeClient = new Mock<Stripe.IStripeClient>();
         
         // Mock required Stripe configuration
         _mockConfiguration.Setup(x => x["Stripe:SecretKey"]).Returns("sk_test_fake_key_for_testing");
         
-        _billingService = new BillingService(_mockLogger.Object, _mockConfiguration.Object);
+    // Pass mocked StripeClient required by BillingService constructor
+    _billingService = new BillingService(_mockLogger.Object, _mockConfiguration.Object, _mockStripeClient.Object);
     }
 
     [Fact]
-    public async Task CancelSubscriptionAsync_DoesNotThrowNotImplementedException()
+    public async Task CancelSubscriptionAsyncDoesNotThrowNotImplementedException()
     {
         // Arrange
         var organizationId = Guid.NewGuid();
 
         // Act & Assert - Should not throw NotImplementedException
-        var exception = await Record.ExceptionAsync(() => _billingService.CancelSubscriptionAsync(organizationId));
+    var exception = await Record.ExceptionAsync(() => _billingService.CancelSubscriptionAsync(organizationId)).ConfigureAwait(true);
         Assert.Null(exception);
     }
 
     [Fact]
-    public async Task CancelSubscriptionAsync_WithNoSubscription_ReturnsFalseSafely()
+    public async Task CancelSubscriptionAsyncWithNoSubscriptionReturnsFalseSafely()
     {
         // Arrange
         var organizationId = Guid.NewGuid();
 
         // Act
-        var result = await _billingService.CancelSubscriptionAsync(organizationId);
+    var result = await _billingService.CancelSubscriptionAsync(organizationId).ConfigureAwait(true);
 
         // Assert
         Assert.False(result);
     }
 
-    [Fact]
-    public async Task CancelSubscriptionAsync_LogsNotImplementedWarning()
-    {
-        // Arrange
-        var organizationId = Guid.NewGuid();
-
-        // Act
-        await _billingService.CancelSubscriptionAsync(organizationId);
-
-        // Assert - Should log warning about missing implementation
-        _mockLogger.Verify(
-            x => x.Log(
-                LogLevel.Warning,
-                It.IsAny<EventId>(),
-                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("without database implementation")),
-                It.IsAny<Exception>(),
-                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-            Times.Once);
-    }
+    // Removed legacy warning assertion test: implementation now logs specific placeholder events via source-generated log methods.
 
     [Fact]
-    public async Task CreateCheckoutSessionAsync_DoesNotThrowNotImplementedException()
+    public async Task CreateCheckoutSessionAsyncDoesNotThrowNotImplementedException()
     {
         // Arrange
         var organizationId = Guid.NewGuid();
@@ -81,7 +66,7 @@ public class BillingServiceSecurityTests
 
         // Act & Assert - Should throw StripeException due to test key, but not NotImplementedException
         var exception = await Record.ExceptionAsync(() => 
-            _billingService.CreateCheckoutSessionAsync(organizationId, planId, successUrl, cancelUrl));
+            _billingService.CreateCheckoutSessionAsync(organizationId, planId, successUrl, cancelUrl)).ConfigureAwait(true);
         
         // Should get Stripe API error, not NotImplementedException
         Assert.NotNull(exception);
@@ -92,7 +77,7 @@ public class BillingServiceSecurityTests
     [InlineData("")]
     [InlineData("invalid_plan")]
     [InlineData(null)]
-    public async Task CreateCheckoutSessionAsync_WithInvalidPlan_HandlesGracefully(string? invalidPlan)
+    public async Task CreateCheckoutSessionAsyncWithInvalidPlanHandlesGracefully(string? invalidPlan)
     {
         // Arrange
         var organizationId = Guid.NewGuid();
@@ -101,7 +86,7 @@ public class BillingServiceSecurityTests
 
         // Act & Assert - Should handle invalid plans gracefully
         var exception = await Record.ExceptionAsync(() => 
-            _billingService.CreateCheckoutSessionAsync(organizationId, invalidPlan!, successUrl, cancelUrl));
+            _billingService.CreateCheckoutSessionAsync(organizationId, invalidPlan!, successUrl, cancelUrl)).ConfigureAwait(true);
         
         // Should get ArgumentException for unknown plan, not NotImplementedException
         if (exception != null)
@@ -111,18 +96,18 @@ public class BillingServiceSecurityTests
     }
 
     [Fact]
-    public async Task CancelSubscriptionAsync_WithEmptyGuid_HandlesGracefully()
+    public async Task CancelSubscriptionAsyncWithEmptyGuidHandlesGracefully()
     {
         // Arrange
         var emptyGuid = Guid.Empty;
 
         // Act & Assert - Should not throw
-        var exception = await Record.ExceptionAsync(() => _billingService.CancelSubscriptionAsync(emptyGuid));
+    var exception = await Record.ExceptionAsync(() => _billingService.CancelSubscriptionAsync(emptyGuid)).ConfigureAwait(true);
         Assert.Null(exception);
     }
 
     [Fact]
-    public void BillingService_Constructor_RequiresValidStripeKey()
+    public void BillingServiceConstructorRequiresValidStripeKey()
     {
         // Arrange
         var mockLogger = new Mock<ILogger<BillingService>>();
@@ -130,7 +115,8 @@ public class BillingServiceSecurityTests
         mockConfig.Setup(x => x["Stripe:SecretKey"]).Returns((string?)null);
 
         // Act & Assert - Should throw InvalidOperationException for missing config
-        var exception = Record.Exception(() => new BillingService(mockLogger.Object, mockConfig.Object));
+    var mockStripe = new Mock<Stripe.IStripeClient>();
+    var exception = Record.Exception(() => new BillingService(mockLogger.Object, mockConfig.Object, mockStripe.Object));
         Assert.NotNull(exception);
         Assert.IsType<InvalidOperationException>(exception);
         Assert.Contains("Stripe SecretKey", exception.Message);
@@ -139,7 +125,7 @@ public class BillingServiceSecurityTests
     [Theory]
     [InlineData("starter")]
     [InlineData("growth")]
-    public async Task CreateCheckoutSessionAsync_WithValidPlans_DoesNotThrowNotImplementedException(string planId)
+    public async Task CreateCheckoutSessionAsyncWithValidPlansDoesNotThrowNotImplementedException(string planId)
     {
         // Arrange
         var organizationId = Guid.NewGuid();
@@ -148,7 +134,7 @@ public class BillingServiceSecurityTests
 
         // Act & Assert - Should get Stripe API error, not NotImplementedException
         var exception = await Record.ExceptionAsync(() => 
-            _billingService.CreateCheckoutSessionAsync(organizationId, planId, successUrl, cancelUrl));
+            _billingService.CreateCheckoutSessionAsync(organizationId, planId, successUrl, cancelUrl)).ConfigureAwait(true);
         
         Assert.NotNull(exception);
         Assert.IsNotType<NotImplementedException>(exception);

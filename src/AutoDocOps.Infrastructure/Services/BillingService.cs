@@ -18,9 +18,9 @@ public class BillingService : IBillingService
 {
     private readonly ILogger<BillingService> _logger;
     private readonly IConfiguration _configuration;
-    private readonly StripeClient _stripeClient;
+    private readonly IStripeClient _stripeClient;
 
-    public BillingService(ILogger<BillingService> logger, IConfiguration configuration, StripeClient stripeClient)
+    public BillingService(ILogger<BillingService> logger, IConfiguration configuration, IStripeClient stripeClient)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -28,6 +28,13 @@ public class BillingService : IBillingService
         _logger = logger;
         _configuration = configuration;
         _stripeClient = stripeClient;
+
+        // Fail fast if secret key is missing (security & test expectation)
+        var secret = _configuration["Stripe:SecretKey"];
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            throw new InvalidOperationException("Stripe SecretKey configuration (Stripe:SecretKey) is required but was not provided.");
+        }
     }
 
     /// <summary>

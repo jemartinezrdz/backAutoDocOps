@@ -31,17 +31,17 @@ public class SqlAnalyzer
             {
                 case "postgresql":
                 case "postgres":
-                    await AnalyzePostgreSqlAsync(sqlContent, metadata, cancellationToken);
+                    await AnalyzePostgreSqlAsync(sqlContent, metadata, cancellationToken).ConfigureAwait(false);
                     break;
                 case "mysql":
-                    await AnalyzeMySqlAsync(sqlContent, metadata, cancellationToken);
+                    await AnalyzeMySqlAsync(sqlContent, metadata, cancellationToken).ConfigureAwait(false);
                     break;
                 case "sqlserver":
                 case "mssql":
-                    await AnalyzeSqlServerAsync(sqlContent, metadata, cancellationToken);
+                    await AnalyzeSqlServerAsync(sqlContent, metadata, cancellationToken).ConfigureAwait(false);
                     break;
                 default:
-                    await AnalyzeGenericSqlAsync(sqlContent, metadata, cancellationToken);
+                    await AnalyzeGenericSqlAsync(sqlContent, metadata, cancellationToken).ConfigureAwait(false);
                     break;
             }
         }

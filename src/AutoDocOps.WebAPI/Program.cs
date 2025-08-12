@@ -544,3 +544,6 @@ static string PartitionKey(HttpContext ctx)
     }
     return "ip:" + ctx.Connection.RemoteIpAddress;
 }
+
+// Make Program class accessible to tests
+public partial class Program { }

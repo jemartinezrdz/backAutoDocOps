@@ -10,13 +10,12 @@ namespace AutoDocOps.Tests.Infrastructure;
 public class BannedSymbolsTests
 {
     [Fact]
-    public void TestConstants_ShouldReplaceCommonMagicNumbers()
+    public void TestConstantsShouldReplaceCommonMagicNumbers()
     {
         // This test demonstrates the use of constants instead of magic numbers
         
-        // Bad practice (magic numbers)
-        var badTimeout = 5000; // What does 5000 represent?
-        var badLimit = 256 * 1024; // What is this limit for?
+    // Bad practice (magic numbers) -- removed explicit unused assignments to avoid CS0219 warnings
+    // (e.g. 5000 for timeout, 256*1024 for limit) now validated indirectly via constants below.
         
         // Good practice (named constants)
         var goodTimeout = AutoDocOps.Infrastructure.Constants.TestConstants.Performance.StandardTimeoutMs;
@@ -32,7 +31,7 @@ public class BannedSymbolsTests
     }
     
     [Fact] 
-    public void MemoryHelper_ShouldPreventDirectArrayAllocation()
+    public void MemoryHelperShouldPreventDirectArrayAllocation()
     {
         // This test demonstrates proper memory management patterns
         
@@ -60,7 +59,7 @@ public class BannedSymbolsTests
     [InlineData("Thread.Sleep")]
     [InlineData("Task.Wait()")]
     [InlineData("Task.Result")]
-    public void CommonAntiPatterns_ShouldBeAvoided(string antiPattern)
+    public void CommonAntiPatternsShouldBeAvoided(string antiPattern)
     {
         // This test documents anti-patterns that should be avoided
         // The actual enforcement would be done by analyzers
@@ -78,7 +77,7 @@ public class BannedSymbolsTests
     }
     
     [Fact]
-    public void ConfigurationValues_ShouldNotBeHardcoded()
+    public void ConfigurationValuesShouldNotBeHardcoded()
     {
         // This test demonstrates proper configuration handling
         
@@ -96,7 +95,7 @@ public class BannedSymbolsTests
     }
     
     [Fact]
-    public void StreamOperations_ShouldUseMemoryEfficientMethods()
+    public void StreamOperationsShouldUseMemoryEfficientMethods()
     {
         // This test demonstrates memory-efficient stream operations
         
@@ -116,7 +115,7 @@ public class BannedSymbolsTests
     }
     
     [Fact]
-    public void LoggingPatterns_ShouldUseStructuredLogging()
+    public void LoggingPatternsShouldUseStructuredLogging()
     {
         // This test demonstrates proper logging patterns
         
@@ -138,7 +137,7 @@ public class BannedSymbolsTests
     }
     
     [Fact]
-    public void ExceptionHandling_ShouldBeSpecific()
+    public void ExceptionHandlingShouldBeSpecific()
     {
         // This test demonstrates proper exception handling patterns
         
@@ -165,7 +164,7 @@ public class BannedSymbolsTests
     }
     
     [Fact]
-    public void AsyncOperations_ShouldUseConfigureAwait()
+    public void AsyncOperationsShouldUseConfigureAwait()
     {
         // This test demonstrates proper async patterns
         
@@ -187,20 +186,20 @@ public class BannedSymbolsTests
     [InlineData("token", false)]
     [InlineData("username", true)]
     [InlineData("email", true)]
-    public void SensitiveData_ShouldNotBeLogged(string fieldName, bool canBeLogged)
+    public void SensitiveDataShouldNotBeLogged(string fieldName, bool canBeLogged)
     {
         // This test documents which types of data should not appear in logs
         
         var sensitiveFields = new[] { "password", "apikey", "secret", "token", "key" };
         var isSensitive = sensitiveFields.Any(field => 
-            fieldName.ToLowerInvariant().Contains(field));
+            fieldName.Contains(field, StringComparison.OrdinalIgnoreCase));
         
         isSensitive.Should().Be(!canBeLogged, 
             $"Field '{fieldName}' sensitivity should match expected logging policy");
     }
     
     [Fact]
-    public void CryptographicOperations_ShouldUseSecureAlgorithms()
+    public void CryptographicOperationsShouldUseSecureAlgorithms()
     {
         // This test documents secure cryptographic practices
         

@@ -135,28 +135,28 @@ public class TestConstantsTests
         // This test ensures all constant classes are accessible and don't throw
         
         // Overflow constants
-        var _ = TestConstants.Overflow.OverflowTriggerOffsetTicks;
-        var __ = TestConstants.Overflow.NearMaxTimeSpan;
+    _ = TestConstants.Overflow.OverflowTriggerOffsetTicks;
+    _ = TestConstants.Overflow.NearMaxTimeSpan;
         
         // Performance constants
-        var ___ = TestConstants.Performance.StandardTimeoutMs;
-        var ____ = TestConstants.Performance.MaxApiResponseTimeMs;
-        var _____ = TestConstants.Performance.DefaultBatchSize;
+    _ = TestConstants.Performance.StandardTimeoutMs;
+    _ = TestConstants.Performance.MaxApiResponseTimeMs;
+    _ = TestConstants.Performance.DefaultBatchSize;
         
         // Memory constants
-        var ______ = TestConstants.Memory.MaxRequestMemoryBytes;
-        var _______ = TestConstants.Memory.StreamBufferSize;
-        var ________ = TestConstants.Memory.StackAllocThreshold;
+    _ = TestConstants.Memory.MaxRequestMemoryBytes;
+    _ = TestConstants.Memory.StreamBufferSize;
+    _ = TestConstants.Memory.StackAllocThreshold;
         
         // Rate limit constants
-        var _________ = TestConstants.RateLimit.DefaultRequestLimit;
-        var __________ = TestConstants.RateLimit.StandardWindowMinutes;
-        var ___________ = TestConstants.RateLimit.BurstCapacity;
+    _ = TestConstants.RateLimit.DefaultRequestLimit;
+    _ = TestConstants.RateLimit.StandardWindowMinutes;
+    _ = TestConstants.RateLimit.BurstCapacity;
         
         // Database constants
-        var ____________ = TestConstants.Database.ConnectionTimeoutSeconds;
-        var _____________ = TestConstants.Database.CommandTimeoutSeconds;
-        var ______________ = TestConstants.Database.MaxRetryAttempts;
+    _ = TestConstants.Database.ConnectionTimeoutSeconds;
+    _ = TestConstants.Database.CommandTimeoutSeconds;
+    _ = TestConstants.Database.MaxRetryAttempts;
         
         // If we reach here, all constants are accessible
         true.Should().BeTrue();

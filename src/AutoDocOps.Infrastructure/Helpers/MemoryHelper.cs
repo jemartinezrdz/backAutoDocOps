@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Text;
+using System.Globalization;
 
 namespace AutoDocOps.Infrastructure.Helpers;
 
@@ -36,10 +37,10 @@ public static class MemoryHelper
             while (totalRead < maxBytes && 
                    (bytesRead = await stream.ReadAsync(
                        rentedBuffer.AsMemory(0, Math.Min(rentedBuffer.Length, maxBytes - totalRead)), 
-                       cancellationToken)) > 0)
+                       cancellationToken).ConfigureAwait(false)) > 0)
             {
                 totalRead += bytesRead;
-                await memoryStream.WriteAsync(rentedBuffer.AsMemory(0, bytesRead), cancellationToken);
+                await memoryStream.WriteAsync(rentedBuffer.AsMemory(0, bytesRead), cancellationToken).ConfigureAwait(false);
                 
                 // Check if we've hit the limit
                 if (totalRead >= maxBytes)
@@ -79,7 +80,7 @@ public static class MemoryHelper
             var bufferMemory = rentedBuffer.AsMemory();
             
             while (totalRead < maxBytes && 
-                   (bytesRead = await stream.ReadAsync(bufferMemory.Slice(totalRead, maxBytes - totalRead), cancellationToken)) > 0)
+                   (bytesRead = await stream.ReadAsync(bufferMemory.Slice(totalRead, maxBytes - totalRead), cancellationToken).ConfigureAwait(false)) > 0)
             {
                 totalRead += bytesRead;
             }
@@ -91,7 +92,7 @@ public static class MemoryHelper
                 var testBuffer = ArrayPool<byte>.Shared.Rent(1);
                 try
                 {
-                    hasMoreData = await stream.ReadAsync(testBuffer.AsMemory(0, 1), cancellationToken) > 0;
+                    hasMoreData = await stream.ReadAsync(testBuffer.AsMemory(0, 1), cancellationToken).ConfigureAwait(false) > 0;
                 }
                 finally
                 {
@@ -134,9 +135,9 @@ public static class MemoryHelper
             while (totalCopied < maxBytes &&
                    (bytesRead = await source.ReadAsync(
                        rentedBuffer.AsMemory(0, (int)Math.Min(rentedBuffer.Length, maxBytes - totalCopied)),
-                       cancellationToken)) > 0)
+                       cancellationToken).ConfigureAwait(false)) > 0)
             {
-                await destination.WriteAsync(rentedBuffer.AsMemory(0, bytesRead), cancellationToken);
+                await destination.WriteAsync(rentedBuffer.AsMemory(0, bytesRead), cancellationToken).ConfigureAwait(false);
                 totalCopied += bytesRead;
             }
             
@@ -162,12 +163,12 @@ public static class MemoryHelper
         var estimatedSize = format.Length + (args?.Sum(a => a?.ToString()?.Length ?? 0) ?? 0);
         if (estimatedSize <= MaxStackAlloc)
         {
-            return string.Format(format, args ?? Array.Empty<object>());
+            return string.Format(CultureInfo.InvariantCulture, format, args ?? Array.Empty<object>());
         }
         
         // For larger strings, use StringBuilder with appropriate capacity
         var sb = new StringBuilder(estimatedSize);
-        sb.AppendFormat(format, args ?? Array.Empty<object>());
+        sb.AppendFormat(CultureInfo.InvariantCulture, format, args ?? Array.Empty<object>());
         return sb.ToString();
     }
 }

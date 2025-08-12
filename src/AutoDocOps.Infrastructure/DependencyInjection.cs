@@ -19,6 +19,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Polly;
 using Polly.Extensions.Http;
+using Microsoft.Extensions.Http;
 using System.Net.Http;
 using Stripe;
 using AutoDocOps.Infrastructure.Monitoring;
@@ -86,8 +87,8 @@ public static class DependencyInjection
             .AddPolicyHandler(retryPolicy)
             .AddPolicyHandler(circuitBreakerPolicy);
 
-        // Stripe client singleton
-        services.AddSingleton(provider => new StripeClient(configuration["Stripe:SecretKey"] ?? string.Empty));
+    // Stripe client singleton registered via interface for easier testing
+    services.AddSingleton<IStripeClient>(_ => new StripeClient(configuration["Stripe:SecretKey"] ?? string.Empty));
 
         // Add billing service
     services.AddScoped<IBillingService, Services.BillingService>();

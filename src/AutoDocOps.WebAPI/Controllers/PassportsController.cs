@@ -40,7 +40,10 @@ public class PassportsController : ControllerBase
             _logger.RetrievingPassport(id);
             
             var query = new GetPassportQuery(id);
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
             var result = await _mediator.Send(query);
+            #pragma warning restore CA2007
             
             var passportDto = new PassportDto(
                 result.Id,
@@ -123,7 +126,10 @@ public class PassportsController : ControllerBase
             _logger.RetrievingPassportsForProject(projectId);
             
             var query = new GetPassportsByProjectQuery(projectId, page, pageSize);
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
             var result = await _mediator.Send(query);
+            #pragma warning restore CA2007
             
             var passportDtos = result.Passports.Select(p => new PassportDto(
                 p.Id,
@@ -176,7 +182,10 @@ public class PassportsController : ControllerBase
             _logger.DeletingPassport(id);
             
             var command = new DeletePassportCommand(id);
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
             var result = await _mediator.Send(command);
+            #pragma warning restore CA2007
             
             if (!result.Success)
             {
@@ -220,7 +229,10 @@ public class PassportsController : ControllerBase
             _logger.DownloadingPassport(id, format);
             
             var query = new GetPassportQuery(id);
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
             var result = await _mediator.Send(query);
+            #pragma warning restore CA2007
             
             var fileName = $"passport-{result.Version}.{result.Format}";
                         var contentType = result.Format.ToLowerInvariant() switch

@@ -12,7 +12,8 @@ public class PrometheusMetricsTests : IClassFixture<WebApplicationFactory<Progra
 
     public PrometheusMetricsTests(WebApplicationFactory<Program> factory)
     {
-        _factory = factory.WithWebHostBuilder(_ => { });
+    ArgumentNullException.ThrowIfNull(factory);
+    _factory = factory.WithWebHostBuilder(_ => { });
     }
 
     [Fact]

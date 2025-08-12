@@ -6,6 +6,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Globalization;
 
 namespace AutoDocOps.Infrastructure.Authentication;
 
@@ -17,6 +18,7 @@ public class JwtTokenService : IJwtTokenService
 
     public JwtTokenService(IOptions<JwtSettings> jwtSettings, IRefreshTokenStore? refreshTokenStore = null)
     {
+        ArgumentNullException.ThrowIfNull(jwtSettings);
         _jwtSettings = jwtSettings.Value;
         _tokenHandler = new JwtSecurityTokenHandler();
         _refreshTokenStore = refreshTokenStore;
@@ -26,10 +28,10 @@ public class JwtTokenService : IJwtTokenService
     {
         var claims = new List<Claim>
         {
-            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(ClaimTypes.NameIdentifier, userId.ToString("D", CultureInfo.InvariantCulture)),
             new(ClaimTypes.Email, email),
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture)),
+            new(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture), ClaimValueTypes.Integer64)
         };
 
         // Add roles
@@ -38,7 +40,7 @@ public class JwtTokenService : IJwtTokenService
         // Add organization claim if provided
         if (organizationId.HasValue)
         {
-            claims.Add(new Claim("OrganizationId", organizationId.Value.ToString()));
+            claims.Add(new Claim("OrganizationId", organizationId.Value.ToString("D", CultureInfo.InvariantCulture)));
         }
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.SecretKey));
@@ -112,7 +114,7 @@ public class JwtTokenService : IJwtTokenService
         // If refresh token store is available, validate against stored tokens
         if (_refreshTokenStore != null)
         {
-            return await _refreshTokenStore.IsValidRefreshTokenAsync(refreshToken);
+            return await _refreshTokenStore.IsValidRefreshTokenAsync(refreshToken).ConfigureAwait(false);
         }
 
         // Fallback: basic validation for development/testing

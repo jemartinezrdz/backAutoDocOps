@@ -18,11 +18,11 @@ public class PassportBuilder
     };
 
     public PassportBuilder ForProject(Guid projectId) { _passport.ProjectId = projectId; return this; }
-    public PassportBuilder WithVersion(string version) { _passport.Version = version; return this; }
-    public PassportBuilder WithFormat(string format) { _passport.Format = format; return this; }
+    public PassportBuilder WithVersion(string version) { ArgumentNullException.ThrowIfNull(version); _passport.Version = version; return this; }
+    public PassportBuilder WithFormat(string format) { ArgumentNullException.ThrowIfNull(format); _passport.Format = format; return this; }
     public PassportBuilder Completed() { _passport.Status = PassportStatus.Completed; _passport.CompletedAt = DateTime.UtcNow; return this; }
     public PassportBuilder WithGenerator(Guid userId) { _passport.GeneratedBy = userId; return this; }
-    public PassportBuilder WithContent(string content) { _passport.DocumentationContent = content; _passport.SizeInBytes = content.Length; return this; }
+    public PassportBuilder WithContent(string content) { ArgumentNullException.ThrowIfNull(content); _passport.DocumentationContent = content; _passport.SizeInBytes = content.Length; return this; }
 
     public Passport Build() => _passport;
 }

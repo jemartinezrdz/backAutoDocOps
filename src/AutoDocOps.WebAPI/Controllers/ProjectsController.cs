@@ -75,7 +75,10 @@ public class ProjectsController : ControllerBase
             }
 
             var query = new GetProjectsQuery(organizationId, page, pageSize);
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
             var result = await _mediator.Send(query);
+            #pragma warning restore CA2007
 
             _logger.RetrievedProjects(result.Projects.Count(), organizationId);
 
@@ -110,7 +113,10 @@ public class ProjectsController : ControllerBase
             _logger.RetrievingProject(id);
             
             var query = new GetProjectQuery(id);
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
             var result = await _mediator.Send(query);
+            #pragma warning restore CA2007
             
             return Ok(result.Project);
         }
@@ -161,7 +167,10 @@ public class ProjectsController : ControllerBase
                 request.CreatedBy
             );
 
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
             var result = await _mediator.Send(command);
+            #pragma warning restore CA2007
 
             _logger.CreatedProject(result.Id, result.OrganizationId);
 

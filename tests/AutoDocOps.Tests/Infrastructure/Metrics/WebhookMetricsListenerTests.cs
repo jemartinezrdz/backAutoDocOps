@@ -12,6 +12,7 @@ public class WebhookMetricsListenerTests : IClassFixture<WebApplicationFactory<P
 
     public WebhookMetricsListenerTests(WebApplicationFactory<Program> factory)
     {
+        ArgumentNullException.ThrowIfNull(factory);
         _factory = factory.WithWebHostBuilder(_ => { });
     }
 
@@ -40,11 +41,16 @@ public class WebhookMetricsListenerTests : IClassFixture<WebApplicationFactory<P
         listener.Start();
 
         // Missing signature triggers failure path but still increments requests
-        var response = await client.PostAsync("/stripe/webhook", new StringContent("{}", System.Text.Encoding.UTF8, "application/json")).ConfigureAwait(true);
+    using var payload = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+    var response = await client.PostAsync("/stripe/webhook", payload).ConfigureAwait(true);
         response.StatusCode.Should().NotBe(System.Net.HttpStatusCode.OK);
 
         // Simple wait for metric flush
-        await Task.Delay(100);
-        seen.Should().BeGreaterThan(0);
+        // Poll a few times to allow exporter to observe measurement
+        for (var i = 0; i < 5 && seen == 0; i++)
+        {
+            await Task.Delay(50).ConfigureAwait(true);
+        }
+        seen.Should().BeGreaterThan(0, "posting an invalid webhook must increment request counter");
     }
 }

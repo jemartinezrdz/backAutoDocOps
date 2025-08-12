@@ -213,3 +213,9 @@ dotnet_diagnostic.CA1846.severity = suggestion
 
 # CA1847: Use String.Contains(char) instead of String.Contains(string) with single characters
 dotnet_diagnostic.CA1847.severity = suggestion
+
+# Test project relaxations (per LEEME Phase 3 to reduce noise for readability-focused test naming)
+[tests/AutoDocOps.Tests/**/*.cs]
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CA2007.severity = none
+dotnet_diagnostic.CA1305.severity = none

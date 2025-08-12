@@ -17,7 +17,7 @@ public class ProjectRepository : IProjectRepository
     public async Task<Project?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return await _context.Projects
-            .FirstOrDefaultAsync(p => p.Id == id && p.IsActive, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == id && p.IsActive, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<Project?> GetByIdWithSpecsAsync(Guid id, CancellationToken cancellationToken = default)
@@ -25,7 +25,7 @@ public class ProjectRepository : IProjectRepository
         return await _context.Projects
             .Include(p => p.Specs)
             .Include(p => p.Passports)
-            .FirstOrDefaultAsync(p => p.Id == id && p.IsActive, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == id && p.IsActive, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IEnumerable<Project>> GetByOrganizationIdAsync(Guid organizationId, int page = 1, int pageSize = 10, CancellationToken cancellationToken = default)
@@ -35,38 +35,39 @@ public class ProjectRepository : IProjectRepository
             .OrderByDescending(p => p.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<int> GetCountByOrganizationIdAsync(Guid organizationId, CancellationToken cancellationToken = default)
     {
         return await _context.Projects
-            .CountAsync(p => p.OrganizationId == organizationId && p.IsActive, cancellationToken);
+            .CountAsync(p => p.OrganizationId == organizationId && p.IsActive, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<Project> CreateAsync(Project project, CancellationToken cancellationToken = default)
     {
         _context.Projects.Add(project);
-        await _context.SaveChangesAsync(cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return project;
     }
 
     public async Task<Project> UpdateAsync(Project project, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(project);
         project.UpdatedAt = DateTime.UtcNow;
         _context.Projects.Update(project);
-        await _context.SaveChangesAsync(cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return project;
     }
 
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var project = await _context.Projects.FindAsync(new object[] { id }, cancellationToken);
+        var project = await _context.Projects.FindAsync(new object[] { id }, cancellationToken).ConfigureAwait(false);
         if (project != null)
         {
             project.IsActive = false;
             project.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync(cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return true;
         }
         return false;
@@ -75,7 +76,7 @@ public class ProjectRepository : IProjectRepository
     public async Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return await _context.Projects
-            .AnyAsync(p => p.Id == id && p.IsActive, cancellationToken);
+            .AnyAsync(p => p.Id == id && p.IsActive, cancellationToken).ConfigureAwait(false);
     }
 }
 

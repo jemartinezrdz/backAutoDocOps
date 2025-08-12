@@ -266,6 +266,8 @@ public class TestLogger<T> : ILogger<T>
     
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
     {
+    // Analyzer guard (CA1062)
+    ArgumentNullException.ThrowIfNull(formatter);
         var message = formatter(state, exception);
         _output.WriteLine($"[{logLevel}] {message}");
         

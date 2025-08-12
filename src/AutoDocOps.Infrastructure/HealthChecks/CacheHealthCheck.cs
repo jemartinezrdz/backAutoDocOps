@@ -1,5 +1,6 @@
 using AutoDocOps.Application.Common.Interfaces;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using System.Globalization;
 
 namespace AutoDocOps.Infrastructure.HealthChecks;
 
@@ -20,14 +21,14 @@ public class CacheHealthCheck : IHealthCheck
         {
             // Test cache connectivity by setting and getting a test value
             var testKey = "healthcheck_cache_test";
-            var testValue = DateTime.UtcNow.ToString();
+            var testValue = DateTime.UtcNow.ToString(CultureInfo.InvariantCulture);
             
-            await _cacheService.SetAsync(testKey, testValue, TimeSpan.FromSeconds(10), cancellationToken);
-            var retrievedValue = await _cacheService.GetAsync<string>(testKey, cancellationToken);
+            await _cacheService.SetAsync(testKey, testValue, TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
+            var retrievedValue = await _cacheService.GetAsync<string>(testKey, cancellationToken).ConfigureAwait(false);
             
             if (retrievedValue == testValue)
             {
-                await _cacheService.RemoveAsync(testKey, cancellationToken);
+                await _cacheService.RemoveAsync(testKey, cancellationToken).ConfigureAwait(false);
                 
                 var data = new Dictionary<string, object>
                 {

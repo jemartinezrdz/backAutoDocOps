@@ -20,7 +20,7 @@ public class LlmHealthCheck : IHealthCheck
         {
             // Test LLM connectivity with a simple query
             var testQuery = "Hello";
-            var response = await _llmClient.ChatAsync(testQuery, cancellationToken);
+            var response = await _llmClient.ChatAsync(testQuery, cancellationToken).ConfigureAwait(false);
             
             if (!string.IsNullOrEmpty(response))
             {

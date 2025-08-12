@@ -167,6 +167,7 @@ public class MemoryHelperTests
     [InlineData("A longer string with {0} parameters {1}", "A longer string with test parameters 42")]
     public void FormatLarge_WithVariousInputs_FormatsCorrectly(string format, string expected)
     {
+    ArgumentNullException.ThrowIfNull(format);
         // Arrange
         var args = format.Contains("{0}") ? new object[] { "test", 42 } : Array.Empty<object>();
         

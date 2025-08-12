@@ -9,7 +9,7 @@ using Xunit;
 
 namespace AutoDocOps.Tests.Infrastructure.Services;
 
-public class DocumentationGenerationServiceTests
+public sealed class DocumentationGenerationServiceTests : IDisposable
 {
     private readonly Mock<IServiceScopeFactory> _mockScopeFactory;
     private readonly Mock<IServiceScope> _mockScope;
@@ -29,6 +29,8 @@ public class DocumentationGenerationServiceTests
         _mockProjectRepository = new Mock<IProjectRepository>();
         _mockLogger = new Mock<ILogger<DocumentationGenerationService>>();
         _mockOptions = new Mock<IOptions<DocumentationGenerationOptions>>();
+    // Ensure logging at all levels is enabled for verification of error logging
+    _mockLogger.Setup(l => l.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
 
         // Setup mock options with default values
         _mockOptions.Setup(x => x.Value).Returns(new DocumentationGenerationOptions
@@ -48,6 +50,8 @@ public class DocumentationGenerationServiceTests
 
         _service = new DocumentationGenerationService(_mockScopeFactory.Object, _mockLogger.Object, _mockOptions.Object);
     }
+
+    public void Dispose() => _service?.Dispose();
 
     [Fact]
     public async Task ProcessPendingPassports_WithValidPassports_ProcessesSuccessfully()

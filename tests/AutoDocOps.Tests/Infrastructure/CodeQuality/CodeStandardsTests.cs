@@ -327,6 +327,13 @@ public class CodeStandardsTests
             .Where(p => !p.EndsWith(".Designer.cs", StringComparison.OrdinalIgnoreCase))
             .Where(p => !p.Contains("\\Migrations\\"));
 
+    /// <summary>
+    /// Heuristic method to detect test/comment context
+    /// </summary>
+    /// <remarks>
+    /// Limitations: May fail with complex string literals or nested comments.
+    /// Acceptable for code standards validation, not for critical parsing.
+    /// </remarks>
     private static bool IsInTestOrCommentContext(string line)
     {
         // Heuristic: quick skip for line comments, block comment markers, or common test artifacts

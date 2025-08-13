@@ -78,8 +78,8 @@ public class DocumentationGenerationServiceOverflowTests
     public void BackoffHelperCheckedArithmeticOnOverflowReturnsMax()
     {
         // Arrange - value chosen to overflow when doubled
-    var overflowProneValueTicks = checked(long.MaxValue / 2 + OverflowTriggerOffsetTicks);
-    var largeDelay = new TimeSpan(overflowProneValueTicks);
+        var overflowProneValueTicks = checked(long.MaxValue - OverflowTriggerOffsetTicks);
+        var largeDelay = new TimeSpan(overflowProneValueTicks);
         var maxDelay = TimeSpan.FromDays(365);
 
         // Act

@@ -61,7 +61,10 @@ public class WebhookMetricsListenerTests : IClassFixture<WebApplicationFactory<P
         listener.Start();
 
         // Missing signature triggers failure path but still increments requests
-    using var payload = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+    using var payload = new StringContent(
+        "{\"id\":\"evt_test\",\"type\":\"passport.generated\",\"data\":{\"project_id\":\"123\"}}", 
+        System.Text.Encoding.UTF8, 
+        "application/json");
     var response = await client.PostAsync("/stripe/webhook", payload).ConfigureAwait(true);
         response.StatusCode.Should().NotBe(System.Net.HttpStatusCode.OK);
 

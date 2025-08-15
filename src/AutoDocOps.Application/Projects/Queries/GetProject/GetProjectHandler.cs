@@ -1,3 +1,4 @@
+using AutoDocOps.Application.Common.Interfaces;
 using AutoDocOps.Domain.Interfaces;
 using AutoDocOps.Application.Projects.Queries.GetProjects;
 using MediatR;
@@ -7,15 +8,27 @@ namespace AutoDocOps.Application.Projects.Queries.GetProject;
 public class GetProjectHandler : IRequestHandler<GetProjectQuery, GetProjectResponse>
 {
     private readonly IProjectRepository _projectRepository;
+    private readonly ICacheService _cacheService;
 
-    public GetProjectHandler(IProjectRepository projectRepository)
+    public GetProjectHandler(IProjectRepository projectRepository, ICacheService cacheService)
     {
         _projectRepository = projectRepository;
+        _cacheService = cacheService;
     }
 
     public async Task<GetProjectResponse> Handle(GetProjectQuery request, CancellationToken cancellationToken)
     {
-        var project = await _projectRepository.GetByIdAsync(request.Id, cancellationToken);
+    ArgumentNullException.ThrowIfNull(request);
+        var cacheKey = $"project:{request.Id}";
+        
+        // Try to get from cache first using async method
+    var cachedResponse = await _cacheService.GetAsync<GetProjectResponse>(cacheKey, cancellationToken).ConfigureAwait(false);
+        if (cachedResponse != null)
+        {
+            return cachedResponse;
+        }
+        
+    var project = await _projectRepository.GetByIdAsync(request.Id, cancellationToken).ConfigureAwait(false);
         
         if (project == null)
         {
@@ -35,6 +48,11 @@ public class GetProjectHandler : IRequestHandler<GetProjectQuery, GetProjectResp
             project.IsActive
         );
 
-        return new GetProjectResponse(projectDto);
+        var response = new GetProjectResponse(projectDto);
+        
+        // Cache the response for 20 minutes
+    await _cacheService.SetAsync(cacheKey, response, TimeSpan.FromMinutes(20), cancellationToken).ConfigureAwait(false);
+
+        return response;
     }
 }

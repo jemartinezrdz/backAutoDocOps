@@ -1,5 +1,7 @@
 using AutoDocOps.Application.Authentication.Models;
 using AutoDocOps.Application.Authentication.Services;
+using AutoDocOps.Application.Common.Interfaces;
+using AutoDocOps.Application.Common.Models;
 using AutoDocOps.Domain.Interfaces;
 using AutoDocOps.Infrastructure.Authentication;
 using AutoDocOps.Infrastructure.Data;
@@ -7,6 +9,7 @@ using AutoDocOps.Infrastructure.HealthChecks;
 using AutoDocOps.Infrastructure.Repositories;
 using AutoDocOps.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using StackExchange.Redis;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -14,18 +17,28 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using Polly;
+using Polly.Extensions.Http;
+using Microsoft.Extensions.Http;
+using System.Net.Http;
+using Stripe;
+using AutoDocOps.Infrastructure.Monitoring;
+using System.Threading.Channels;
+using AutoDocOps.Domain.Entities;
 
 namespace AutoDocOps.Infrastructure;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration, IHostEnvironment? environment = null)
     {
+    ArgumentNullException.ThrowIfNull(services);
+    ArgumentNullException.ThrowIfNull(configuration);
         // Add DbContext
         services.AddDbContext<AutoDocOpsDbContext>(options =>
         {
             var connectionString = configuration.GetConnectionString("DefaultConnection") 
-                ?? "Host=localhost;Database=autodocops;Username=postgres;Password=postgres";
+                ?? throw new InvalidOperationException("DefaultConnection is required but not configured. Please set the ConnectionStrings:DefaultConnection configuration value.");
             
             options.UseNpgsql(connectionString, npgsqlOptions =>
             {
@@ -44,13 +57,96 @@ public static class DependencyInjection
             }
         });
 
+        // Cache/Session configuration
+        var provider = configuration.GetValue<string>("Caching:Provider");
+        if (environment?.IsEnvironment("Test") == true || string.Equals(provider, "Memory", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddDistributedMemoryCache();
+            services.AddMemoryCache();
+            services.AddScoped<ICacheService, Services.MemoryCacheService>();
+        }
+        else
+        {
+            var redisConnectionString = configuration.GetConnectionString("Redis") ?? "localhost:6379";
+            services.AddStackExchangeRedisCache(options =>
+            {
+                options.Configuration = redisConnectionString;
+                options.InstanceName = "AutoDocOps";
+            });
+
+            // Add Redis ConnectionMultiplexer for pattern-based operations
+            services.AddSingleton<IConnectionMultiplexer>(provider =>
+                ConnectionMultiplexer.Connect(redisConnectionString));
+
+            services.AddScoped<ICacheService, RedisCacheService>();
+        }
+
+        // Resilient HttpClient for billing-related outbound calls (placeholder for future external integrations)
+        var retryPolicy = HttpPolicyExtensions
+            .HandleTransientHttpError()
+            .OrResult(msg => (int)msg.StatusCode == 429)
+            .WaitAndRetryAsync(3, attempt => TimeSpan.FromMilliseconds(100 * Math.Pow(2, attempt)));
+        var circuitBreakerPolicy = HttpPolicyExtensions
+            .HandleTransientHttpError()
+            .CircuitBreakerAsync(5, TimeSpan.FromSeconds(30));
+
+        services.AddHttpClient("Billing")
+            .SetHandlerLifetime(TimeSpan.FromMinutes(5))
+            .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(5))
+            .AddPolicyHandler(retryPolicy)
+            .AddPolicyHandler(circuitBreakerPolicy);
+
+        // Billing configuration
+        var enableBilling = configuration.GetValue("Features:EnableBilling", false);
+        var stripeKey = configuration["Stripe:SecretKey"];
+        if (enableBilling && !string.IsNullOrWhiteSpace(stripeKey))
+        {
+            services.AddSingleton<IStripeClient>(_ => new StripeClient(stripeKey));
+            services.AddScoped<IBillingService, Services.BillingService>();
+        }
+        else
+        {
+            services.AddScoped<IBillingService, Services.NullBillingService>();
+        }
+        
+        // Add webhook metrics
+        services.AddSingleton<IWebhookMetrics, Monitoring.WebhookMetrics>();
+        
+    services.AddSingleton<ISecretSourceProvider, SecretSourceProvider>();
+        services.AddSingleton(Channel.CreateBounded<BillingAuditLog>(new BoundedChannelOptions(1000)
+        {
+            FullMode = BoundedChannelFullMode.DropWrite
+        }));
+        services.AddScoped<IBillingAuditService, BillingAuditService>();
+        services.AddHostedService<BillingAuditBackgroundService>();
+    // Audit background processing channel + hosted service configured in BillingAuditService file
+
+        // Add LLM client
+                var useFakeLlm = Environment.GetEnvironmentVariable("USE_FAKE_LLM")?.ToLowerInvariant() == "true";
+        if (useFakeLlm)
+        {
+            services.AddScoped<ILlmClient, FakeLlmClient>();
+        }
+        else
+        {
+            services.AddScoped<ILlmClient, OpenAILlmClient>();
+        }
+
         // Add repositories
         services.AddScoped<IProjectRepository, ProjectRepository>();
         services.AddScoped<ISpecRepository, SpecRepository>();
         services.AddScoped<IPassportRepository, PassportRepository>();
 
-        // Add background services
-        services.AddHostedService<DocumentationGenerationService>();
+        // Configure options
+        services.Configure<DocumentationGenerationOptions>(
+            configuration.GetSection(DocumentationGenerationOptions.SectionName));
+
+        // Add background services (conditionally based on environment/configuration)
+        var enableDocumentationGeneration = configuration.GetValue<bool>("Features:EnableDocumentationGeneration", false);
+        if (enableDocumentationGeneration)
+        {
+            services.AddHostedService<DocumentationGenerationService>();
+        }
 
         // Configure JWT settings
         services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));
@@ -74,7 +170,9 @@ public static class DependencyInjection
             })
             .AddJwtBearer(options =>
             {
-                options.RequireHttpsMetadata = false; // Set to true in production
+                // Only disable HTTPS metadata in development
+                var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+                options.RequireHttpsMetadata = env != "Development";
                 options.SaveToken = true;
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
@@ -104,7 +202,15 @@ public static class DependencyInjection
 
         // Add Health Checks
         services.AddHealthChecks()
-            .AddCheck<DocumentationServiceHealthCheck>("documentation_service");
+            .AddCheck<DocumentationServiceHealthCheck>("documentation_service")
+            .AddCheck<CacheHealthCheck>("cache_service") 
+            .AddCheck<LlmHealthCheck>("llm_service")
+            .AddNpgSql(
+                connectionString: configuration.GetConnectionString("DefaultConnection") ?? 
+                    throw new InvalidOperationException("DefaultConnection is required for health checks but not configured."),
+                name: "database")
+            .AddRedis(configuration.GetConnectionString("Redis") ?? "localhost:6379",
+                name: "redis_cache");
 
         return services;
     }

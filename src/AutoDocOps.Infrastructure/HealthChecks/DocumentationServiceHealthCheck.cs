@@ -20,7 +20,7 @@ public class DocumentationServiceHealthCheck : IHealthCheck
         {
             // Check if we can query the database
             var pendingCount = (await _passportRepository.GetByStatusAsync(
-                Domain.Entities.PassportStatus.Generating, cancellationToken)).Count();
+                Domain.Entities.PassportStatus.Generating, cancellationToken).ConfigureAwait(false)).Count();
 
             var data = new Dictionary<string, object>
             {

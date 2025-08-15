@@ -1,0 +1,265 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>AutoDocOps.Infrastructure</name>
+    </assembly>
+    <members>
+        <member name="T:AutoDocOps.Infrastructure.Constants.TestConstants">
+            <summary>
+            Constants used in testing scenarios to avoid magic numbers
+            </summary>
+        </member>
+        <member name="T:AutoDocOps.Infrastructure.Constants.TestConstants.Overflow">
+            <summary>
+            Overflow testing constants
+            </summary>
+        </member>
+        <member name="F:AutoDocOps.Infrastructure.Constants.TestConstants.Overflow.OverflowTriggerOffsetTicks">
+            <summary>
+            Small offset in ticks added to trigger overflow conditions in tests
+            This ensures that when TimeSpan values are doubled, they exceed long.MaxValue
+            </summary>
+        </member>
+        <member name="F:AutoDocOps.Infrastructure.Constants.TestConstants.Overflow.NearMaxTimeSpan">
+            <summary>
+            Timeout value that when doubled will cause an overflow
+            </summary>
+        </member>
+        <member name="T:AutoDocOps.Infrastructure.Constants.TestConstants.Performance">
+            <summary>
+            Performance testing constants
+            </summary>
+        </member>
+        <member name="F:AutoDocOps.Infrastructure.Constants.TestConstants.Performance.StandardTimeoutMs">
+            <summary>
+            Standard timeout for performance-critical operations (milliseconds)
+            </summary>
+        </member>
+        <member name="F:AutoDocOps.Infrastructure.Constants.TestConstants.Performance.MaxApiResponseTimeMs">
+            <summary>
+            Maximum acceptable response time for API calls (milliseconds)
+            </summary>
+        </member>
+        <member name="F:AutoDocOps.Infrastructure.Constants.TestConstants.Performance.DefaultBatchSize">
+            <summary>
+            Default batch size for bulk operations
+            </summary>
+        </member>
+        <member name="T:AutoDocOps.Infrastructure.Constants.TestConstants.Memory">
+            <summary>
+            Memory testing constants
+            </summary>
+        </member>
+        <member name="F:AutoDocOps.Infrastructure.Constants.TestConstants.Memory.MaxRequestMemoryBytes">
+            <summary>
+            Maximum allowed memory allocation per request (bytes)
+            </summary>
+        </member>
+        <member name="F:AutoDocOps.Infrastructure.Constants.TestConstants.Memory.StreamBufferSize">
+            <summary>
+            Buffer size for streaming operations (bytes)
+            </summary>
+        </member>
+        <member name="F:AutoDocOps.Infrastructure.Constants.TestConstants.Memory.StackAllocThreshold">
+            <summary>
+            Threshold for using pooled buffers vs stack allocation
+            </summary>
+        </member>
+        <member name="T:AutoDocOps.Infrastructure.Constants.TestConstants.RateLimit">
+            <summary>
+            Rate limiting test constants
+            </summary>
+        </member>
+        <member name="F:AutoDocOps.Infrastructure.Constants.TestConstants.RateLimit.DefaultRequestLimit">
+            <summary>
+            Default number of requests allowed per time window
+            </summary>
+        </member>
+        <member name="F:AutoDocOps.Infrastructure.Constants.TestConstants.RateLimit.StandardWindowMinutes">
+            <summary>
+            Standard time window for rate limiting (minutes)
+            </summary>
+        </member>
+        <member name="F:AutoDocOps.Infrastructure.Constants.TestConstants.RateLimit.BurstCapacity">
+            <summary>
+            Burst capacity for rate limiting
+            </summary>
+        </member>
+        <member name="T:AutoDocOps.Infrastructure.Constants.TestConstants.Database">
+            <summary>
+            Database testing constants
+            </summary>
+        </member>
+        <member name="F:AutoDocOps.Infrastructure.Constants.TestConstants.Database.ConnectionTimeoutSeconds">
+            <summary>
+            Connection timeout for database operations (seconds)
+            </summary>
+        </member>
+        <member name="F:AutoDocOps.Infrastructure.Constants.TestConstants.Database.CommandTimeoutSeconds">
+            <summary>
+            Command timeout for database queries (seconds)
+            </summary>
+        </member>
+        <member name="F:AutoDocOps.Infrastructure.Constants.TestConstants.Database.MaxRetryAttempts">
+            <summary>
+            Maximum retry attempts for database operations
+            </summary>
+        </member>
+        <member name="T:AutoDocOps.Infrastructure.Helpers.BackoffHelper">
+            <summary>
+            Helper class for exponential backoff calculations with overflow protection
+            </summary>
+        </member>
+        <member name="M:AutoDocOps.Infrastructure.Helpers.BackoffHelper.NextDelay(System.TimeSpan,System.TimeSpan)">
+            <summary>
+            Calculates the next delay using exponential backoff with overflow protection
+            </summary>
+            <param name="current">Current delay</param>
+            <param name="max">Maximum allowed delay</param>
+            <returns>Next delay value, capped at maximum</returns>
+        </member>
+        <member name="T:AutoDocOps.Infrastructure.Helpers.MemoryHelper">
+            <summary>
+            Utility class for efficient memory management operations
+            </summary>
+        </member>
+        <member name="M:AutoDocOps.Infrastructure.Helpers.MemoryHelper.ReadStreamToStringAsync(System.IO.Stream,System.Int32,System.Threading.CancellationToken)">
+            <summary>
+            Reads a stream into a string using pooled buffers for memory efficiency
+            </summary>
+            <param name="stream">The stream to read from</param>
+            <param name="maxBytes">Maximum bytes to read (prevents memory exhaustion)</param>
+            <param name="cancellationToken">Cancellation token</param>
+            <returns>The string content of the stream</returns>
+        </member>
+        <member name="M:AutoDocOps.Infrastructure.Helpers.MemoryHelper.ReadStreamWithLimitAsync(System.IO.Stream,System.Int32,System.Threading.CancellationToken)">
+            <summary>
+            Reads a fixed amount from a stream using pooled memory
+            </summary>
+            <param name="stream">The stream to read from</param>
+            <param name="maxBytes">Maximum bytes to read</param>
+            <param name="cancellationToken">Cancellation token</param>
+            <returns>Tuple of (data as string, actualBytesRead, hasMoreData)</returns>
+        </member>
+        <member name="M:AutoDocOps.Infrastructure.Helpers.MemoryHelper.CopyStreamAsync(System.IO.Stream,System.IO.Stream,System.Int64,System.Threading.CancellationToken)">
+            <summary>
+            Copies data between streams using pooled buffers
+            </summary>
+            <param name="source">Source stream</param>
+            <param name="destination">Destination stream</param>
+            <param name="maxBytes">Maximum bytes to copy</param>
+            <param name="cancellationToken">Cancellation token</param>
+            <returns>Number of bytes copied</returns>
+        </member>
+        <member name="M:AutoDocOps.Infrastructure.Helpers.MemoryHelper.FormatLarge(System.String,System.Object[])">
+            <summary>
+            Efficiently formats large strings using pooled arrays when needed
+            </summary>
+            <param name="format">Format string</param>
+            <param name="args">Arguments</param>
+            <returns>Formatted string</returns>
+        </member>
+        <member name="T:AutoDocOps.Infrastructure.Monitoring.MemoryMetrics">
+            <summary>
+            Provides memory usage metrics and monitoring capabilities
+            </summary>
+        </member>
+        <member name="M:AutoDocOps.Infrastructure.Monitoring.MemoryMetrics.GetCurrentUsage">
+            <summary>
+            Gets current memory usage statistics
+            </summary>
+        </member>
+        <member name="M:AutoDocOps.Infrastructure.Monitoring.MemoryMetrics.MonitorAsync``1(System.Func{System.Threading.Tasks.Task{``0}},System.String,Microsoft.Extensions.Logging.ILogger)">
+            <summary>
+            Monitors memory usage during an operation
+            </summary>
+            <typeparam name="T">Return type of the operation</typeparam>
+            <param name="operation">The operation to monitor</param>
+            <param name="operationName">Name of the operation for logging</param>
+            <param name="logger">Logger instance</param>
+            <returns>Tuple of operation result and memory metrics</returns>
+        </member>
+        <member name="M:AutoDocOps.Infrastructure.Monitoring.MemoryMetrics.CheckMemoryPressure(System.Int64,System.Int64)">
+            <summary>
+            Checks if current memory usage exceeds thresholds
+            </summary>
+            <param name="workingSetThresholdMB">Working set threshold in MB</param>
+            <param name="gcMemoryThresholdMB">GC memory threshold in MB</param>
+            <returns>Memory pressure information</returns>
+        </member>
+        <member name="T:AutoDocOps.Infrastructure.Monitoring.MemoryUsageInfo">
+            <summary>
+            Current memory usage information
+            </summary>
+        </member>
+        <member name="T:AutoDocOps.Infrastructure.Monitoring.MemoryUsageDelta">
+            <summary>
+            Memory usage change between two points in time
+            </summary>
+        </member>
+        <member name="T:AutoDocOps.Infrastructure.Monitoring.MemoryPressureInfo">
+            <summary>
+            Memory pressure assessment information
+            </summary>
+        </member>
+        <member name="M:AutoDocOps.Infrastructure.Services.BillingService.AnonymizeOrganizationId(System.Guid)">
+            <summary>
+            Helper to hash/anonymize organization IDs for secure logging
+            </summary>
+        </member>
+        <member name="P:AutoDocOps.Infrastructure.Services.DocumentationGenerationOptions.CheckIntervalSeconds">
+            <summary>
+            Interval in seconds between checking for pending passports
+            </summary>
+        </member>
+        <member name="P:AutoDocOps.Infrastructure.Services.DocumentationGenerationOptions.SimulationPhaseDelaySeconds">
+            <summary>
+            Delay in seconds between each simulation phase (for development/testing)
+            </summary>
+        </member>
+        <member name="P:AutoDocOps.Infrastructure.Services.DocumentationGenerationOptions.EnableSimulation">
+            <summary>
+            Whether to enable simulation mode (for development/testing)
+            </summary>
+        </member>
+        <member name="P:AutoDocOps.Infrastructure.Services.DocumentationGenerationOptions.MaxConcurrentGenerations">
+            <summary>
+            Maximum number of concurrent documentation generations
+            </summary>
+        </member>
+        <member name="P:AutoDocOps.Infrastructure.Services.DocumentationGenerationOptions.RetryDelayMinutes">
+            <summary>
+            Retry delay in minutes when an error occurs
+            </summary>
+        </member>
+        <member name="T:AutoDocOps.Infrastructure.Validators.ApiKeyValidator">
+            <summary>
+            Validates OpenAI API keys with comprehensive security checks
+            </summary>
+        </member>
+        <member name="M:AutoDocOps.Infrastructure.Validators.ApiKeyValidator.IsValidOpenAiKey(System.String)">
+            <summary>
+            Validates OpenAI API key format and structure
+            </summary>
+            <param name="key">The API key to validate</param>
+            <returns>True if the key is valid, false otherwise</returns>
+        </member>
+        <member name="M:AutoDocOps.Infrastructure.Validators.ApiKeyValidator.ValidateWithDetails(System.String)">
+            <summary>
+            Validates OpenAI API key and returns detailed validation result
+            </summary>
+            <param name="key">The API key to validate</param>
+            <returns>Validation result with specific failure reason</returns>
+        </member>
+        <member name="T:AutoDocOps.Infrastructure.Validators.ApiKeyValidationResult">
+            <summary>
+            Result of API key validation with detailed feedback
+            </summary>
+        </member>
+        <member name="M:AutoDocOps.Infrastructure.Validators.ApiKeyValidationResult.#ctor(System.Boolean,System.String)">
+            <summary>
+            Result of API key validation with detailed feedback
+            </summary>
+        </member>
+    </members>
+</doc>

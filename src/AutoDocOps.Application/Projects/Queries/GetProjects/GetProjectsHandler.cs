@@ -14,15 +14,16 @@ public class GetProjectsHandler : IRequestHandler<GetProjectsQuery, GetProjectsR
 
     public async Task<GetProjectsResponse> Handle(GetProjectsQuery request, CancellationToken cancellationToken)
     {
+    ArgumentNullException.ThrowIfNull(request);
         var projects = await _projectRepository.GetByOrganizationIdAsync(
             request.OrganizationId, 
             request.Page, 
             request.PageSize, 
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
 
         var totalCount = await _projectRepository.GetCountByOrganizationIdAsync(
             request.OrganizationId, 
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
 
         var projectDtos = projects.Select(p => new ProjectDto(
             p.Id,

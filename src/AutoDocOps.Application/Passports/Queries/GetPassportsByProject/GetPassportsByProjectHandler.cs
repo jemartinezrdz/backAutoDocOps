@@ -15,7 +15,8 @@ public class GetPassportsByProjectHandler : IRequestHandler<GetPassportsByProjec
 
     public async Task<GetPassportsByProjectResponse> Handle(GetPassportsByProjectQuery request, CancellationToken cancellationToken)
     {
-        var passports = await _passportRepository.GetByProjectIdAsync(request.ProjectId, cancellationToken);
+    ArgumentNullException.ThrowIfNull(request);
+    var passports = await _passportRepository.GetByProjectIdAsync(request.ProjectId, cancellationToken).ConfigureAwait(false);
         
         // Apply pagination
         var totalCount = passports.Count();

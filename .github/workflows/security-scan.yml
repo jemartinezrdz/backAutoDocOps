@@ -1,0 +1,95 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run daily at 3 AM UTC
+    - cron: '0 3 * * *'
+
+jobs:
+  secret-scan:
+    name: Secret Detection with Gitleaks
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for better secret detection
+    
+    - name: Run Gitleaks
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+      with:
+        args: --sarif-report=gitleaks.sarif --verbose
+    
+    - name: Upload SARIF results
+      if: always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: gitleaks.sarif
+        category: gitleaks
+    
+    - name: Create security badge
+      if: success()
+      run: |
+        echo "Secret Scan: ✅ Passed" > secret-scan-badge.txt
+        echo "Last updated: $(date -u)" >> secret-scan-badge.txt
+    
+    - name: Upload security badge
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-badge
+        path: secret-scan-badge.txt
+        retention-days: 30
+
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+    
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Run security audit
+      run: dotnet list package --vulnerable --include-transitive 2>&1 | tee security-audit.txt
+    
+    - name: Check for vulnerabilities
+      run: |
+        if grep -q "has the following vulnerable packages" security-audit.txt; then
+          echo "❌ Vulnerable dependencies found!"
+          cat security-audit.txt
+          exit 1
+        else
+          echo "✅ No vulnerable dependencies found"
+        fi
+    
+    - name: Upload audit results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: dependency-audit
+        path: security-audit.txt
+        retention-days: 30

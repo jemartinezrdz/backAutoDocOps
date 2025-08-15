@@ -9,6 +9,8 @@ public class OrganizationAuthorizationHandler : AuthorizationHandler<Organizatio
         AuthorizationHandlerContext context, 
         OrganizationRequirement requirement)
     {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(requirement);
         var userOrganizationId = context.User.FindFirst("OrganizationId")?.Value;
         
         if (string.IsNullOrEmpty(userOrganizationId))

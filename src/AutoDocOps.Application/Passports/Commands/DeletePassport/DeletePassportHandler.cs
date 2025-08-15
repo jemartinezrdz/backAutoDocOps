@@ -14,9 +14,11 @@ public class DeletePassportHandler : IRequestHandler<DeletePassportCommand, Dele
 
     public async Task<DeletePassportResponse> Handle(DeletePassportCommand request, CancellationToken cancellationToken)
     {
-        var success = await _passportRepository.DeleteAsync(request.Id, cancellationToken);
+    ArgumentNullException.ThrowIfNull(request);
+
+    var success = await _passportRepository.DeleteAsync(request.Id, cancellationToken).ConfigureAwait(false);
         
-        return new DeletePassportResponse(
+    return new DeletePassportResponse(
             success, 
             success ? "Passport deleted successfully" : "Passport not found or could not be deleted"
         );

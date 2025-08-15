@@ -16,7 +16,7 @@ public class DeletePassportHandlerTests
         _handler = new DeletePassportHandler(_mockPassportRepository.Object);
     }
 
-    [Fact]
+    [Fact(Timeout = 2000)]
     public async Task Handle_ExistingPassport_ReturnsSuccessResponse()
     {
         // Arrange
@@ -38,7 +38,7 @@ public class DeletePassportHandlerTests
         _mockPassportRepository.Verify(x => x.DeleteAsync(passportId, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    [Fact]
+    [Fact(Timeout = 2000)]
     public async Task Handle_NonExistingPassport_ReturnsFailureResponse()
     {
         // Arrange
@@ -60,7 +60,7 @@ public class DeletePassportHandlerTests
         _mockPassportRepository.Verify(x => x.DeleteAsync(passportId, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    [Fact]
+    [Fact(Timeout = 2000)]
     public async Task Handle_RepositoryThrowsException_PropagatesException()
     {
         // Arrange

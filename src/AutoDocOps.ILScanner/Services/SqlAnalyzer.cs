@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using AutoDocOps.ILScanner.Logging;
 using System.Text.RegularExpressions;
 
 namespace AutoDocOps.ILScanner.Services;
@@ -17,6 +18,7 @@ public class SqlAnalyzer
         string databaseType,
         CancellationToken cancellationToken = default)
     {
+    ArgumentNullException.ThrowIfNull(databaseType);
         var metadata = new SqlMetadata
         {
             AnalysisTimestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
@@ -29,23 +31,23 @@ public class SqlAnalyzer
             {
                 case "postgresql":
                 case "postgres":
-                    await AnalyzePostgreSqlAsync(sqlContent, metadata, cancellationToken);
+                    await AnalyzePostgreSqlAsync(sqlContent, metadata, cancellationToken).ConfigureAwait(false);
                     break;
                 case "mysql":
-                    await AnalyzeMySqlAsync(sqlContent, metadata, cancellationToken);
+                    await AnalyzeMySqlAsync(sqlContent, metadata, cancellationToken).ConfigureAwait(false);
                     break;
                 case "sqlserver":
                 case "mssql":
-                    await AnalyzeSqlServerAsync(sqlContent, metadata, cancellationToken);
+                    await AnalyzeSqlServerAsync(sqlContent, metadata, cancellationToken).ConfigureAwait(false);
                     break;
                 default:
-                    await AnalyzeGenericSqlAsync(sqlContent, metadata, cancellationToken);
+                    await AnalyzeGenericSqlAsync(sqlContent, metadata, cancellationToken).ConfigureAwait(false);
                     break;
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error analyzing SQL content for database type: {DatabaseType}", databaseType);
+            _logger.SqlContentError(ex, databaseType);
             throw;
         }
 
@@ -54,7 +56,7 @@ public class SqlAnalyzer
 
     private async Task AnalyzePostgreSqlAsync(string sqlContent, SqlMetadata metadata, CancellationToken cancellationToken)
     {
-        await AnalyzeGenericSqlAsync(sqlContent, metadata, cancellationToken);
+    await AnalyzeGenericSqlAsync(sqlContent, metadata, cancellationToken).ConfigureAwait(false);
         
         // PostgreSQL-specific analysis
         AnalyzePostgreSqlSpecificFeatures(sqlContent, metadata);
@@ -62,7 +64,7 @@ public class SqlAnalyzer
 
     private async Task AnalyzeMySqlAsync(string sqlContent, SqlMetadata metadata, CancellationToken cancellationToken)
     {
-        await AnalyzeGenericSqlAsync(sqlContent, metadata, cancellationToken);
+    await AnalyzeGenericSqlAsync(sqlContent, metadata, cancellationToken).ConfigureAwait(false);
         
         // MySQL-specific analysis
         AnalyzeMySqlSpecificFeatures(sqlContent, metadata);
@@ -70,7 +72,7 @@ public class SqlAnalyzer
 
     private async Task AnalyzeSqlServerAsync(string sqlContent, SqlMetadata metadata, CancellationToken cancellationToken)
     {
-        await AnalyzeGenericSqlAsync(sqlContent, metadata, cancellationToken);
+    await AnalyzeGenericSqlAsync(sqlContent, metadata, cancellationToken).ConfigureAwait(false);
         
         // SQL Server-specific analysis
         AnalyzeSqlServerSpecificFeatures(sqlContent, metadata);
@@ -88,7 +90,10 @@ public class SqlAnalyzer
 
         foreach (Match match in tableMatches)
         {
-            if (cancellationToken.IsCancellationRequested) break;
+            if (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
 
             var schema = match.Groups[1].Value;
             var tableName = match.Groups[2].Value;
@@ -105,7 +110,10 @@ public class SqlAnalyzer
 
         foreach (Match match in viewMatches)
         {
-            if (cancellationToken.IsCancellationRequested) break;
+            if (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
 
             var schema = match.Groups[1].Value;
             var viewName = match.Groups[2].Value;
@@ -124,7 +132,7 @@ public class SqlAnalyzer
         }
 
         // Extract stored procedures/functions
-        await ExtractStoredProceduresAndFunctions(normalizedSql, metadata, cancellationToken);
+    await ExtractStoredProceduresAndFunctions(normalizedSql, metadata, cancellationToken).ConfigureAwait(false);
     }
 
     private TableMetadata ParseTableDefinition(string tableName, string schema, string columnDefinitions)
@@ -228,7 +236,10 @@ public class SqlAnalyzer
 
         foreach (Match match in procedureMatches)
         {
-            if (cancellationToken.IsCancellationRequested) break;
+            if (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
 
             var schema = match.Groups[1].Value;
             var procedureName = match.Groups[2].Value;
@@ -254,7 +265,10 @@ public class SqlAnalyzer
 
         foreach (Match match in functionMatches)
         {
-            if (cancellationToken.IsCancellationRequested) break;
+            if (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
 
             var schema = match.Groups[1].Value;
             var functionName = match.Groups[2].Value;
@@ -280,7 +294,10 @@ public class SqlAnalyzer
 
     private void ParseParameters(string parametersString, Google.Protobuf.Collections.RepeatedField<ParameterMetadata> parameters)
     {
-        if (string.IsNullOrWhiteSpace(parametersString)) return;
+        if (string.IsNullOrWhiteSpace(parametersString))
+        {
+            return;
+        }
 
         var paramMatches = Regex.Matches(parametersString,
             @"(@?\w+)\s+([A-Za-z0-9_\(\),\s]+?)(?:\s*=\s*([^,]+))?(?=,|$)",

@@ -1,0 +1,15 @@
+groups:
+- name: backend_slo
+  rules:
+  - alert: HighP95Latency
+    expr: histogram_quantile(0.95, sum(rate(webhook_duration_seconds_bucket[5m])) by (le)) > 0.30
+    for: 5m
+    labels: { severity: page }
+    annotations:
+      description: "p95 > 300ms en últimos 5m"
+  - alert: HighServerErrors
+    expr: (sum(rate(http_requests_total{code=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))) > 0.01
+    for: 10m
+    labels: { severity: page }
+    annotations:
+      description: "Errores 5xx > 1% en últimos 10m"

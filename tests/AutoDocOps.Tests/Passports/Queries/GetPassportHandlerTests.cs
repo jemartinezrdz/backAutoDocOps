@@ -17,7 +17,7 @@ public class GetPassportHandlerTests
         _handler = new GetPassportHandler(_mockPassportRepository.Object);
     }
 
-    [Fact]
+    [Fact(Timeout = 2000)]
     public async Task Handle_ValidPassportId_ReturnsPassportResponse()
     {
         // Arrange
@@ -58,7 +58,7 @@ public class GetPassportHandlerTests
         Assert.Equal(1000, result.SizeInBytes);
     }
 
-    [Fact]
+    [Fact(Timeout = 2000)]
     public async Task Handle_PassportNotFound_ThrowsArgumentException()
     {
         // Arrange

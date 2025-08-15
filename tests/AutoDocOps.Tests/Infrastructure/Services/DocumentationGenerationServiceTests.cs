@@ -3,12 +3,13 @@ using AutoDocOps.Domain.Interfaces;
 using AutoDocOps.Infrastructure.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
 namespace AutoDocOps.Tests.Infrastructure.Services;
 
-public class DocumentationGenerationServiceTests
+public sealed class DocumentationGenerationServiceTests : IDisposable
 {
     private readonly Mock<IServiceScopeFactory> _mockScopeFactory;
     private readonly Mock<IServiceScope> _mockScope;
@@ -16,6 +17,7 @@ public class DocumentationGenerationServiceTests
     private readonly Mock<IPassportRepository> _mockPassportRepository;
     private readonly Mock<IProjectRepository> _mockProjectRepository;
     private readonly Mock<ILogger<DocumentationGenerationService>> _mockLogger;
+    private readonly Mock<IOptions<DocumentationGenerationOptions>> _mockOptions;
     private readonly DocumentationGenerationService _service;
 
     public DocumentationGenerationServiceTests()
@@ -26,6 +28,17 @@ public class DocumentationGenerationServiceTests
         _mockPassportRepository = new Mock<IPassportRepository>();
         _mockProjectRepository = new Mock<IProjectRepository>();
         _mockLogger = new Mock<ILogger<DocumentationGenerationService>>();
+        _mockOptions = new Mock<IOptions<DocumentationGenerationOptions>>();
+    // Ensure logging at all levels is enabled for verification of error logging
+    _mockLogger.Setup(l => l.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
+
+        // Setup mock options with default values
+        _mockOptions.Setup(x => x.Value).Returns(new DocumentationGenerationOptions
+        {
+            CheckIntervalSeconds = 30,
+            SimulationPhaseDelaySeconds = 2,
+            EnableSimulation = true
+        });
 
         _mockScope.Setup(x => x.ServiceProvider).Returns(_mockServiceProvider.Object);
         _mockScopeFactory.Setup(x => x.CreateScope()).Returns(_mockScope.Object);
@@ -35,8 +48,10 @@ public class DocumentationGenerationServiceTests
         _mockServiceProvider.Setup(x => x.GetService(typeof(IProjectRepository)))
             .Returns(_mockProjectRepository.Object);
 
-        _service = new DocumentationGenerationService(_mockScopeFactory.Object, _mockLogger.Object);
+        _service = new DocumentationGenerationService(_mockScopeFactory.Object, _mockLogger.Object, _mockOptions.Object);
     }
+
+    public void Dispose() => _service?.Dispose();
 
     [Fact]
     public async Task ProcessPendingPassports_WithValidPassports_ProcessesSuccessfully()
@@ -87,7 +102,7 @@ public class DocumentationGenerationServiceTests
             .ReturnsAsync((Passport p, CancellationToken ct) => p);
 
         // Act
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         cts.CancelAfter(TimeSpan.FromSeconds(5)); // Prevent infinite loop
 
         try
@@ -133,7 +148,7 @@ public class DocumentationGenerationServiceTests
             .ReturnsAsync((Passport p, CancellationToken ct) => p);
 
         // Act
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         cts.CancelAfter(TimeSpan.FromSeconds(5));
 
         try
@@ -159,7 +174,7 @@ public class DocumentationGenerationServiceTests
             .ThrowsAsync(new InvalidOperationException("Database error"));
 
         // Act
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         cts.CancelAfter(TimeSpan.FromSeconds(2));
 
         try

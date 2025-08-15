@@ -1,5 +1,10 @@
+using AutoDocOps.Application.Passports.Queries.GetPassport;
+using AutoDocOps.Application.Passports.Queries.GetPassportsByProject;
+using AutoDocOps.Application.Passports.Commands.DeletePassport;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
 
 namespace AutoDocOps.WebAPI.Controllers;
 
@@ -7,6 +12,7 @@ namespace AutoDocOps.WebAPI.Controllers;
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/[controller]")]
 [Produces("application/json")]
+[Authorize(Policy = "DeveloperOrAdmin")]
 public class PassportsController : ControllerBase
 {
     private readonly IMediator _mediator;
@@ -31,10 +37,33 @@ public class PassportsController : ControllerBase
     {
         try
         {
-            // TODO: Implement GetPassportByIdQuery
-            _logger.LogInformation("Retrieving passport {PassportId}", id);
+            _logger.RetrievingPassport(id);
             
-            // Placeholder implementation
+            var query = new GetPassportQuery(id);
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
+            var result = await _mediator.Send(query);
+            #pragma warning restore CA2007
+            
+            var passportDto = new PassportDto(
+                result.Id,
+                result.ProjectId,
+                result.Version,
+                result.Format,
+                result.Status.ToString(),
+                result.GeneratedAt,
+                result.CompletedAt,
+                result.GeneratedBy,
+                result.SizeInBytes,
+                result.ErrorMessage
+            );
+            
+            return Ok(passportDto);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.PassportNotFound(id, ex);
+            
             return NotFound(new ProblemDetails
             {
                 Title = "Passport not found",
@@ -44,7 +73,7 @@ public class PassportsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving passport {PassportId}", id);
+            _logger.ErrorRetrievingPassport(id, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
@@ -94,13 +123,30 @@ public class PassportsController : ControllerBase
                 });
             }
 
-            // TODO: Implement GetPassportsByProjectIdQuery
-            _logger.LogInformation("Retrieving passports for project {ProjectId}", projectId);
+            _logger.RetrievingPassportsForProject(projectId);
             
-            // Placeholder implementation
+            var query = new GetPassportsByProjectQuery(projectId, page, pageSize);
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
+            var result = await _mediator.Send(query);
+            #pragma warning restore CA2007
+            
+            var passportDtos = result.Passports.Select(p => new PassportDto(
+                p.Id,
+                p.ProjectId,
+                p.Version,
+                p.Format,
+                p.Status.ToString(),
+                p.GeneratedAt,
+                p.CompletedAt,
+                p.GeneratedBy,
+                p.SizeInBytes,
+                p.ErrorMessage
+            ));
+
             var response = new PassportListResponse(
-                new List<PassportDto>(),
-                0,
+                passportDtos,
+                result.TotalCount,
                 page,
                 pageSize
             );
@@ -109,12 +155,58 @@ public class PassportsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving passports for project {ProjectId}", projectId);
+            _logger.ErrorRetrievingPassportsForProject(projectId, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
                 Title = "Internal server error",
                 Detail = "An error occurred while retrieving passports",
+                Status = StatusCodes.Status500InternalServerError
+            });
+        }
+    }
+
+    /// <summary>
+    /// Delete a passport
+    /// </summary>
+    /// <param name="id">Passport ID</param>
+    /// <returns>Deletion result</returns>
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult> DeletePassport(Guid id)
+    {
+        try
+        {
+            _logger.DeletingPassport(id);
+            
+            var command = new DeletePassportCommand(id);
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
+            var result = await _mediator.Send(command);
+            #pragma warning restore CA2007
+            
+            if (!result.Success)
+            {
+                return NotFound(new ProblemDetails
+                {
+                    Title = "Passport not found",
+                    Detail = result.Message,
+                    Status = StatusCodes.Status404NotFound
+                });
+            }
+
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            _logger.ErrorDeletingPassport(id, ex);
+            
+            return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+            {
+                Title = "Internal server error",
+                Detail = "An error occurred while deleting the passport",
                 Status = StatusCodes.Status500InternalServerError
             });
         }
@@ -134,10 +226,31 @@ public class PassportsController : ControllerBase
     {
         try
         {
-            // TODO: Implement passport download logic
-            _logger.LogInformation("Downloading passport {PassportId} in format {Format}", id, format);
+            _logger.DownloadingPassport(id, format);
             
-            // Placeholder implementation
+            var query = new GetPassportQuery(id);
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
+            var result = await _mediator.Send(query);
+            #pragma warning restore CA2007
+            
+            var fileName = $"passport-{result.Version}.{result.Format}";
+                        var contentType = result.Format.ToLowerInvariant() switch
+            {
+                "pdf" => "application/pdf",
+                "html" => "text/html",
+                "markdown" => "text/markdown",
+                _ => "text/plain"
+            };
+
+            var content = System.Text.Encoding.UTF8.GetBytes(result.DocumentationContent);
+            
+            return File(content, contentType, fileName);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.PassportNotFound(id, ex);
+            
             return NotFound(new ProblemDetails
             {
                 Title = "Passport not found",
@@ -147,7 +260,7 @@ public class PassportsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error downloading passport {PassportId}", id);
+            _logger.ErrorDownloadingPassport(id, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {

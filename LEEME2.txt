@@ -1,0 +1,202 @@
+6) LoggerMessage en todo el hot‑path (ya iniciaste con TestController)
+Qué aplicar
+Revisa servicios y handlers que todavía usen logger.Log...("...{X}",x) y crea pares XxxLogs.cs por agregado.
+
+Mantén EventId estables y documentados.
+
+Snippet (ejemplo genérico en infraestructura)
+
+// src/AutoDocOps.Infrastructure/Logging/BillingLogs.cs
+namespace AutoDocOps.Infrastructure.Logging;
+
+internal static partial class BillingLogs
+{
+    [LoggerMessage(EventId = 3001, Level = LogLevel.Information, Message = "Stripe charge created: {ChargeId}")]
+    public static partial void StripeChargeCreated(this ILogger logger, string chargeId);
+
+    [LoggerMessage(EventId = 3002, Level = LogLevel.Error, Message = "Stripe operation failed: {Operation}")]
+    public static partial void StripeOpFailed(this ILogger logger, string operation, Exception ex);
+}
+Tests
+Unit (sink en memoria):
+
+BillingLogs_ChargeCreated_EmitsEventId3001()
+
+BillingLogs_OpFailed_EmitsEventId3002_AndException()
+
+7) Cobertura ≥ 80% — hacer que falle en CI
+Qué aplicar (GitHub Actions)
+
+# .github/workflows/ci.yml (paso de tests)
+- name: Test with coverage gate
+  run: dotnet test AutoDocOps.sln -c Release \
+       /p:CollectCoverage=true \
+       /p:CoverletOutputFormat=cobertura \
+       /p:CoverletOutput=./TestResults/Coverage/ \
+       /p:Threshold=80 /p:ThresholdType=line /p:ThresholdStat=total
+
+- name: Upload coverage artifact
+  uses: actions/upload-artifact@v4
+  with:
+    name: coverage
+    path: ./tests/**/TestResults/Coverage/coverage.cobertura.xml
+Si usas Sonar/GitHub summary, añade un job que publique el reporte.
+
+Tests (pipeline / convenciones)
+Añade un test de humo que siempre corre en CI (ej., CiGuard_Runs) y verifica que al menos un proyecto de tests existe (evita “dotnet test” vacío).
+
+Verifica en local que baja el umbral a 79 y CI efectivamente falla (prueba de la cerca).
+
+8) Rate‑limit y RequestSize centralizados por configuración
+Qué aplicar
+Options tipadas:
+
+
+// src/AutoDocOps.WebAPI/Options/WebhookLimitsOptions.cs
+public sealed class WebhookLimitsOptions
+{
+    public int MaxBytes { get; set; } = 256 * 1024;
+}
+
+// src/AutoDocOps.WebAPI/Options/RateLimitOptions.cs
+public sealed class RateLimitOptions
+{
+    public int WebhookPerMinute { get; set; } = 60;
+}
+Program.cs (binding + políticas):
+
+
+builder.Services.Configure<WebhookLimitsOptions>(builder.Configuration.GetSection("WebhookLimits"));
+builder.Services.Configure<RateLimitOptions>(builder.Configuration.GetSection("RateLimit"));
+
+builder.Services.AddRateLimiter(opt =>
+{
+    var sp = builder.Services.BuildServiceProvider();
+    var rl = sp.GetRequiredService<IOptions<RateLimitOptions>>().Value;
+
+    opt.AddPolicy("stripe-webhook", _ =>
+        RateLimitPartition.GetFixedWindowLimiter("stripe", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = rl.WebhookPerMinute,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
+});
+appsettings.Production.json
+
+
+{
+  "WebhookLimits": { "MaxBytes": 262144 },
+  "RateLimit":     { "WebhookPerMinute": 60 }
+}
+Uso en endpoints:
+
+
+var wh = app.Services.GetRequiredService<IOptions<WebhookLimitsOptions>>().Value;
+
+app.MapPost("/stripe/webhook", HandleStripeWebhookAsync)
+   .RequireRateLimiting("stripe-webhook")
+   .WithMetadata(new RequestSizeLimitAttribute(wh.MaxBytes))
+   .WithRequestTimeout(TimeSpan.FromSeconds(5))
+   .AllowAnonymous();
+Tests
+Integration‑light:
+
+StripeWebhook_RateLimited_Returns429_WhenBurstExceedsConfiguredLimit()
+
+StripeWebhook_RequestSize_RespectsConfiguredMaxBytes_Returns413_WhenExceeded()
+
+Simula varias peticiones con HttpClient a un WebApplicationFactory y valida 429. Para 413, envía payload > MaxBytes.
+
+9) Métricas Prometheus + alertas (p95 / 5xx)
+Qué aplicar
+Métricas (counters + histograma):
+
+
+// src/AutoDocOps.WebAPI/Metrics/WebhookMetrics.cs
+public interface IWebhookMetrics
+{
+    void ObserveLatency(string provider, TimeSpan elapsed);
+    void ObserveInvalid(string provider, string reason);
+    void ObserveTimeout(string provider);
+}
+
+public sealed class PromWebhookMetrics : IWebhookMetrics
+{
+    private static readonly Histogram<double> Latency = Metrics.CreateHistogram(
+        "webhook_duration_seconds",
+        "Webhook duration in seconds",
+        new HistogramConfiguration {
+            Buckets = Histogram.LinearBuckets(start: 0.05, width: 0.05, count: 20),
+            LabelNames = new[] { "provider" }
+        });
+
+    private static readonly Counter Invalid = Metrics.CreateCounter(
+        "webhook_invalid_total", "Invalid webhook events",
+        new CounterConfiguration { LabelNames = new[] { "provider", "reason" } });
+
+    private static readonly Counter Timeout = Metrics.CreateCounter(
+        "webhook_timeout_total", "Webhook timeouts",
+        new CounterConfiguration { LabelNames = new[] { "provider" } });
+
+    public void ObserveLatency(string provider, TimeSpan elapsed) => Latency.WithLabels(provider).Observe(elapsed.TotalSeconds);
+    public void ObserveInvalid(string provider, string reason)   => Invalid.WithLabels(provider, reason).Inc();
+    public void ObserveTimeout(string provider)                  => Timeout.WithLabels(provider).Inc();
+}
+DI & /metrics:
+
+
+builder.Services.AddSingleton<IWebhookMetrics, PromWebhookMetrics>();
+// Si usas prometheus-net:
+app.UseMetricServer(); // o MapMetrics() según tu stack
+Alertas (reglas en Prometheus/Grafana; a nivel repo, adjunta archivo alerts.yml):
+
+
+groups:
+- name: backend_slo
+  rules:
+  - alert: HighP95Latency
+    expr: histogram_quantile(0.95, sum(rate(webhook_duration_seconds_bucket[5m])) by (le)) > 0.30
+    for: 5m
+    labels: { severity: page }
+    annotations:
+      description: "p95 > 300ms en últimos 5m"
+  - alert: HighServerErrors
+    expr: (sum(rate(http_requests_total{code=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))) > 0.01
+    for: 10m
+    labels: { severity: page }
+    annotations:
+      description: "Errores 5xx > 1% en últimos 10m"
+Tests
+Integration‑light:
+
+Metrics_Endpoint_ExposesExpectedSeries() → GET /metrics, verifica presencia de webhook_duration_seconds_bucket y webhook_invalid_total.
+
+Metrics_Invalid_IncrementsWithReason() → fuerza 401/413 y valida que reason aparezca.
+
+10) Paquete de pruebas anti‑regresión (end‑to‑end mínimos)
+Qué aplicar
+Un smoke E2E por endpoint clave (webhook, y si aplica, /generate):
+
+Firma válida → 200 + registro de métrica de latencia + EventId correcto (usa tu InMemoryLoggerProvider).
+
+Reintento con mismo EventId → idempotencia (no reprocesa).
+
+Tests
+Webhook_EndToEnd_ValidEvent_200_MetricsAndLog()
+
+Webhook_Idempotent_ReprocessIgnored_Still200()
+
+CodeStandards_NoHardcodedLogStrings_NewCode() (ya lo tienes; mantenlo como red).
+
+Checklist rápido para cerrar Conjunto B
+LoggerMessage: barrido total en servicios/infra (añadir XxxLogs.cs donde falte).
+
+CI: activa el coverage gate (80%) y publica el reporte.
+
+Políticas: WebhookLimitsOptions + RateLimitOptions + binding en Program.cs + appsettings.
+
+Métricas: counters + histogram + /metrics + reglas de alerting (alerts.yml).
+
+Tests: rate‑limit (429), tamaño (413), métricas expuestas, E2E feliz e idempotencia.

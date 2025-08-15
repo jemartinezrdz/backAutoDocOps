@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Logging;
+using AutoDocOps.ILScanner.Logging;
 using System.Text.Json;
 
 namespace AutoDocOps.ILScanner.Services;
@@ -27,18 +28,21 @@ public class ILScannerGrpcService : ILScannerService.ILScannerServiceBase
         AnalyzeProjectRequest request, 
         ServerCallContext context)
     {
+    ArgumentNullException.ThrowIfNull(request);
+    ArgumentNullException.ThrowIfNull(context);
+
         try
         {
-            _logger.LogInformation("Starting analysis for project: {ProjectName}", request.ProjectName);
+            _logger.StartingProjectAnalysis(request.ProjectName);
 
             var metadata = await _roslynAnalyzer.AnalyzeProjectAsync(
                 request.ProjectPath,
                 request.ProjectName,
                 request.SourceFiles.ToList(),
                 request.TargetFramework,
-                context.CancellationToken);
+                context.CancellationToken).ConfigureAwait(false);
 
-            _logger.LogInformation("Analysis completed successfully for project: {ProjectName}", request.ProjectName);
+            _logger.ProjectAnalysisCompleted(request.ProjectName);
 
             return new AnalyzeProjectResponse
             {
@@ -48,7 +52,7 @@ public class ILScannerGrpcService : ILScannerService.ILScannerServiceBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error analyzing project: {ProjectName}", request.ProjectName);
+            _logger.ProjectAnalysisError(ex, request.ProjectName);
             
             return new AnalyzeProjectResponse
             {
@@ -62,16 +66,19 @@ public class ILScannerGrpcService : ILScannerService.ILScannerServiceBase
         AnalyzeSqlRequest request, 
         ServerCallContext context)
     {
+    ArgumentNullException.ThrowIfNull(request);
+    ArgumentNullException.ThrowIfNull(context);
+
         try
         {
-            _logger.LogInformation("Starting SQL analysis for database type: {DatabaseType}", request.DatabaseType);
+            _logger.StartingSqlAnalysis(request.DatabaseType);
 
             var metadata = await _sqlAnalyzer.AnalyzeSqlAsync(
                 request.SqlContent,
                 request.DatabaseType,
-                context.CancellationToken);
+                context.CancellationToken).ConfigureAwait(false);
 
-            _logger.LogInformation("SQL analysis completed successfully");
+            _logger.SqlAnalysisCompleted();
 
             return new AnalyzeSqlResponse
             {
@@ -81,7 +88,7 @@ public class ILScannerGrpcService : ILScannerService.ILScannerServiceBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error analyzing SQL content");
+            _logger.SqlAnalysisError(ex);
             
             return new AnalyzeSqlResponse
             {

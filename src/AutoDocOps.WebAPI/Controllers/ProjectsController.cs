@@ -1,8 +1,11 @@
 using AutoDocOps.Application.Projects.Commands.CreateProject;
 using AutoDocOps.Application.Projects.Queries.GetProjects;
+using AutoDocOps.Application.Projects.Queries.GetProject;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 
 namespace AutoDocOps.WebAPI.Controllers;
 
@@ -10,6 +13,7 @@ namespace AutoDocOps.WebAPI.Controllers;
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/[controller]")]
 [Produces("application/json")]
+[Authorize(Policy = "DeveloperOrAdmin")]
 public class ProjectsController : ControllerBase
 {
     private readonly IMediator _mediator;
@@ -31,6 +35,7 @@ public class ProjectsController : ControllerBase
     [HttpGet]
     [ProducesResponseType(typeof(GetProjectsResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<GetProjectsResponse>> GetProjects(
         [FromQuery, Required] Guid organizationId,
@@ -39,6 +44,15 @@ public class ProjectsController : ControllerBase
     {
         try
         {
+            // Validate user has access to this organization
+            var userOrganizationId = User.FindFirst("OrganizationId")?.Value;
+            if (string.IsNullOrEmpty(userOrganizationId) || 
+                !Guid.TryParse(userOrganizationId, out var userOrgId) ||
+                userOrgId != organizationId)
+            {
+                return Forbid("Access denied to this organization");
+            }
+
             // Validate parameters
             if (page < 1)
             {
@@ -61,16 +75,18 @@ public class ProjectsController : ControllerBase
             }
 
             var query = new GetProjectsQuery(organizationId, page, pageSize);
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
             var result = await _mediator.Send(query);
+            #pragma warning restore CA2007
 
-            _logger.LogInformation("Retrieved {Count} projects for organization {OrganizationId}", 
-                result.Projects.Count(), organizationId);
+            _logger.RetrievedProjects(result.Projects.Count(), organizationId);
 
             return Ok(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving projects for organization {OrganizationId}", organizationId);
+            _logger.ErrorRetrievingProjects(organizationId, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
@@ -94,10 +110,20 @@ public class ProjectsController : ControllerBase
     {
         try
         {
-            // TODO: Implement GetProjectByIdQuery
-            _logger.LogInformation("Retrieving project {ProjectId}", id);
+            _logger.RetrievingProject(id);
             
-            // Placeholder implementation
+            var query = new GetProjectQuery(id);
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
+            var result = await _mediator.Send(query);
+            #pragma warning restore CA2007
+            
+            return Ok(result.Project);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.ProjectNotFound(id, ex);
+            
             return NotFound(new ProblemDetails
             {
                 Title = "Project not found",
@@ -107,7 +133,7 @@ public class ProjectsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving project {ProjectId}", id);
+            _logger.ErrorRetrievingProject(id, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
@@ -129,6 +155,7 @@ public class ProjectsController : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<CreateProjectResponse>> CreateProject([FromBody] CreateProjectRequest request)
     {
+        ArgumentNullException.ThrowIfNull(request);
         try
         {
             var command = new CreateProjectCommand(
@@ -140,10 +167,12 @@ public class ProjectsController : ControllerBase
                 request.CreatedBy
             );
 
+            // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
+            #pragma warning disable CA2007
             var result = await _mediator.Send(command);
+            #pragma warning restore CA2007
 
-            _logger.LogInformation("Created project {ProjectId} for organization {OrganizationId}", 
-                result.Id, result.OrganizationId);
+            _logger.CreatedProject(result.Id, result.OrganizationId);
 
             return CreatedAtAction(
                 nameof(GetProject),
@@ -152,7 +181,7 @@ public class ProjectsController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            _logger.LogWarning(ex, "Invalid project creation request");
+            _logger.InvalidProjectCreationRequest(ex);
             
             return BadRequest(new ProblemDetails
             {
@@ -163,7 +192,7 @@ public class ProjectsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating project");
+            _logger.ErrorCreatingProject(ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {

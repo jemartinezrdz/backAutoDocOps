@@ -7,14 +7,30 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+  <!-- Configuración básica de coverlet para generar reporte automático en CI/local -->
+  <CollectCoverage>true</CollectCoverage>
+  <CoverletOutputFormat>opencover,json</CoverletOutputFormat>
+  <CoverletOutput>../TestResults/coverage/</CoverletOutput>
+  <!-- Excluir ensamblajes de test y código generado -->
+  <Exclude>[xunit.*]*,[*.Tests]*,[*]AutoMapper.*</Exclude>
+  <!-- Coverage thresholds (only enforced when running tests) -->
+  <Threshold>80</Threshold>
+  <ThresholdType>line,branch,method</ThresholdType>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="xunit" Version="2.5.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="ReportGenerator" Version="5.3.7" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
+    <!-- Force latest versions to address security vulnerabilities -->
+    <PackageReference Include="System.Net.Http" Version="4.3.4" />
+    <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -24,6 +40,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\AutoDocOps.Domain\AutoDocOps.Domain.csproj" />
     <ProjectReference Include="..\..\src\AutoDocOps.Application\AutoDocOps.Application.csproj" />
+    <ProjectReference Include="..\..\src\AutoDocOps.Infrastructure\AutoDocOps.Infrastructure.csproj" />
+  <ProjectReference Include="..\..\src\AutoDocOps.WebAPI\AutoDocOps.WebAPI.csproj" />
   </ItemGroup>
 
 </Project>

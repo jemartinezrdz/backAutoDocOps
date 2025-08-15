@@ -2,6 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Logging;
+using AutoDocOps.ILScanner.Logging;
 using System.Text.RegularExpressions;
 
 namespace AutoDocOps.ILScanner.Services;
@@ -22,6 +23,10 @@ public class RoslynAnalyzer
         string targetFramework,
         CancellationToken cancellationToken = default)
     {
+    ArgumentNullException.ThrowIfNull(projectPath);
+    ArgumentNullException.ThrowIfNull(projectName);
+    ArgumentNullException.ThrowIfNull(sourceFiles);
+    ArgumentNullException.ThrowIfNull(targetFramework);
         var metadata = new ProjectMetadata
         {
             ProjectName = projectName,
@@ -34,16 +39,18 @@ public class RoslynAnalyzer
         foreach (var sourceFile in sourceFiles)
         {
             if (cancellationToken.IsCancellationRequested)
+            {
                 break;
+            }
 
             try
             {
-                var content = await File.ReadAllTextAsync(sourceFile, cancellationToken);
+                var content = await File.ReadAllTextAsync(sourceFile, cancellationToken).ConfigureAwait(false);
                 var lines = content.Split('\n').Length;
                 totalLines += lines;
 
-                var syntaxTree = CSharpSyntaxTree.ParseText(content, path: sourceFile);
-                var root = await syntaxTree.GetRootAsync(cancellationToken);
+                var syntaxTree = CSharpSyntaxTree.ParseText(content, path: sourceFile, cancellationToken: cancellationToken);
+                var root = await syntaxTree.GetRootAsync(cancellationToken).ConfigureAwait(false);
 
                 // Analyze classes
                 var classDeclarations = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
@@ -81,7 +88,7 @@ public class RoslynAnalyzer
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error analyzing file: {SourceFile}", sourceFile);
+                _logger.FileAnalysisWarning(ex, sourceFile);
             }
         }
 
@@ -237,10 +244,22 @@ public class RoslynAnalyzer
 
     private string GetAccessModifier(SyntaxTokenList modifiers)
     {
-        if (modifiers.Any(SyntaxKind.PublicKeyword)) return "public";
-        if (modifiers.Any(SyntaxKind.PrivateKeyword)) return "private";
-        if (modifiers.Any(SyntaxKind.ProtectedKeyword)) return "protected";
-        if (modifiers.Any(SyntaxKind.InternalKeyword)) return "internal";
+        if (modifiers.Any(SyntaxKind.PublicKeyword))
+        {
+            return "public";
+        }
+        if (modifiers.Any(SyntaxKind.PrivateKeyword))
+        {
+            return "private";
+        }
+        if (modifiers.Any(SyntaxKind.ProtectedKeyword))
+        {
+            return "protected";
+        }
+        if (modifiers.Any(SyntaxKind.InternalKeyword))
+        {
+            return "internal";
+        }
         return "internal"; // Default in C#
     }
 
@@ -252,7 +271,9 @@ public class RoslynAnalyzer
             .FirstOrDefault();
 
         if (documentationComment.IsKind(SyntaxKind.None))
+        {
             return string.Empty;
+        }
 
         var text = documentationComment.ToString();
         

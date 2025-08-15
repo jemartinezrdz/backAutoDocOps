@@ -1,0 +1,72 @@
+# Banned Symbols for AutoDocOps
+# This file defines APIs that should not be used to prevent common issues
+
+# Memory management - prefer ArrayPool over direct array allocation for large arrays
+T:System.Array;Large arrays should use ArrayPool<T>.Shared for memory efficiency
+M:System.GC.Collect();Explicit GC calls should be avoided in production code
+
+# String operations - prefer efficient alternatives
+M:System.String.Concat(System.Object[]);Use StringBuilder for multiple concatenations
+M:System.String.Concat(System.String[]);Use StringBuilder for multiple concatenations
+
+# Stream operations - prefer memory-efficient alternatives
+M:System.IO.StreamReader.ReadToEnd();Use ReadToEndAsync or consider memory limits
+M:System.IO.Stream.CopyTo(System.IO.Stream);Prefer CopyToAsync with cancellation
+
+# Task/Async - prevent common mistakes
+M:System.Threading.Tasks.Task.Wait();Use await instead of blocking Wait()
+M:System.Threading.Tasks.Task.Result;Use await instead of blocking Result access
+M:System.Threading.Tasks.Task`1.Result;Use await instead of blocking Result access
+M:System.Threading.Thread.Sleep(System.Int32);Use await Task.Delay() in async contexts
+
+# DateTime - prefer DateTimeOffset for timezone awareness
+T:System.DateTime;Consider using DateTimeOffset for timezone-aware operations
+M:System.DateTime.Now;Use DateTime.UtcNow or DateTimeOffset.Now as appropriate
+
+# File operations - ensure proper disposal
+M:System.IO.File.ReadAllText(System.String);Consider ReadAllTextAsync for large files
+M:System.IO.File.ReadAllLines(System.String);Consider ReadAllLinesAsync for large files
+M:System.IO.File.WriteAllText(System.String,System.String);Consider WriteAllTextAsync
+
+# Database - prevent SQL injection
+M:System.Data.Common.DbCommand.set_CommandText(System.String);Use parameterized queries
+
+# Cryptography - use secure alternatives
+T:System.Security.Cryptography.MD5;Use SHA256 or higher security algorithms
+T:System.Security.Cryptography.SHA1;Use SHA256 or higher security algorithms
+
+# Random - use cryptographically secure random for security purposes
+T:System.Random;Use RandomNumberGenerator for cryptographic purposes
+
+# Exception handling - avoid generic catch
+T:System.Exception;Catch specific exceptions instead of generic Exception
+
+# Configuration - avoid hardcoded values
+M:System.Environment.GetEnvironmentVariable(System.String);Use IConfiguration for application settings
+
+# Logging - structured logging preferred
+M:System.Console.WriteLine(System.String);Use ILogger for structured logging
+M:System.Console.Write(System.String);Use ILogger for structured logging
+M:System.Diagnostics.Debug.WriteLine(System.String);Use ILogger for structured logging
+
+# Collections - prefer efficient alternatives
+M:System.Linq.Enumerable.Count*;Use Any() when checking for existence, not Count() > 0
+M:System.Collections.Generic.List`1.AddRange(System.Collections.Generic.IEnumerable{`0});Consider capacity planning for large additions
+
+# JSON - security considerations
+M:Newtonsoft.Json.JsonConvert.DeserializeObject*;Configure serializer settings to prevent security issues
+
+# Web - security headers and validation
+M:Microsoft.AspNetCore.Http.HttpRequest.get_Form();Validate content type and size limits
+M:Microsoft.AspNetCore.Http.HttpRequest.ReadFormAsync*;Validate content type and size limits
+
+# Reflection - performance and security implications
+M:System.Type.GetType(System.String);Cache Type instances and validate input
+M:System.Reflection.Assembly.LoadFrom(System.String);Use LoadFile or validate assembly source
+
+# Process execution - security risk
+M:System.Diagnostics.Process.Start*;Validate and sanitize process parameters
+
+# Network - security considerations
+M:System.Net.WebClient.*;Use HttpClient with proper configuration
+T:System.Net.WebClient;Use HttpClient instead for better performance and security

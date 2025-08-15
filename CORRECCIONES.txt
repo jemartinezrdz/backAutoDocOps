@@ -1,0 +1,205 @@
+
+1) Parche inmediato en TestController.cs (elimina CA1848)
+Sustituye todo log de TestController por LoggerMessage con Source Generator. Crea (o amplía) un archivo TestControllerLogs.cs y usa llamadas tipadas en el controlador.
+
+src/AutoDocOps.WebAPI/Controllers/TestControllerLogs.cs
+csharp
+Copy
+Edit
+namespace AutoDocOps.WebAPI.Controllers;
+
+internal static partial class TestControllerLogs
+{
+    // Info: llegada al endpoint de test
+    [LoggerMessage(EventId = 2001, Level = LogLevel.Information,
+        Message = "Test endpoint hit: {Endpoint} TraceId={TraceId}")]
+    public static partial void TestEndpointHit(this ILogger logger, string endpoint, string traceId);
+
+    // Warning: parámetros inválidos o uso indebido del endpoint de test
+    [LoggerMessage(EventId = 2002, Level = LogLevel.Warning,
+        Message = "Test endpoint invalid usage: {Endpoint} Reason={Reason}")]
+    public static partial void TestEndpointInvalid(this ILogger logger, string endpoint, string reason);
+
+    // Error: fallo procesando el endpoint
+    [LoggerMessage(EventId = 2003, Level = LogLevel.Error,
+        Message = "Test endpoint failed: {Endpoint}")]
+    public static partial void TestEndpointFailed(this ILogger logger, string endpoint, Exception ex);
+}
+Cambios en src/AutoDocOps.WebAPI/Controllers/TestController.cs
+Reemplaza:
+
+csharp
+Copy
+Edit
+// Ejemplos que disparan CA1848
+logger.LogInformation($"Ping test ok {DateTime.UtcNow:o}");
+logger.LogWarning($"Invalid test call: {reason}");
+logger.LogError(ex, $"Test failed at {endpoint}");
+por:
+
+csharp
+Copy
+Edit
+logger.TestEndpointHit(endpoint: "GET /api/test/ping", traceId: HttpContext.TraceIdentifier);
+// ...
+logger.TestEndpointInvalid(endpoint: "GET /api/test/ping", reason);
+// ...
+logger.TestEndpointFailed(endpoint: "GET /api/test/ping", ex);
+Nota: no uses interpolación en Message de [LoggerMessage]; usa placeholders ({Endpoint}, {TraceId}, {Reason}) como arriba. Eso elimina allocs/boxing y satisface CA1848.
+
+2) Fortalecer configuración del analizador (para que no vuelva)
+Añade esto a .editorconfig en la raíz del repo o del proyecto WebAPI:
+
+ini
+Copy
+Edit
+# Enforce LoggerMessage delegates
+dotnet_diagnostic.CA1848.severity = error
+
+# Obligatorio si alguien intenta ignorar CA1848 con interpolación en Log*
+# (sigue permitiendo plantillas con placeholders, o LoggerMessage)
+Y asegura que el proyecto trata warnings como error (al menos en WebAPI):
+
+xml
+Copy
+Edit
+<!-- En src/AutoDocOps.WebAPI/AutoDocOps.WebAPI.csproj -->
+<PropertyGroup>
+  <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  <AnalysisMode>AllEnabledByDefault</AnalysisMode>
+  <Nullable>enable</Nullable>
+</PropertyGroup>
+3) Barrido anti‑regresión en todo WebAPI/Infrastructure
+Haz un grep rápido por patrones típicos que gatillan CA1848:
+
+$"Log..." dentro de logger.LogInformation/Warning/Error/Critical/Debug/Trace
+
+string.Format(...) dentro de llamadas a logger.Log...
+
+Si aparecen en otros controladores/servicios, mándalos al mismo patrón de LoggerMessage (ideal: una clase XxxLogs.cs por agregado funcional).
+
+4) Alinea la prueba de estándares para “hardcoded log strings”
+Tu CodeStandardsTests ya detecta strings “duros”. Refuérzalo para detectar interpolación en logs, que suele ser la chispa de CA1848. Manteniendo el detector con Roslyn que ya incorporaste, añade un chequeo dirigido:
+
+Snippet (extiende tu test de estándares)
+csharp
+Copy
+Edit
+[Fact]
+public void NoInterpolatedLoggingInProductionCode()
+{
+    // Recorre archivos *.cs en src/ (excluye tests/migrations)
+    foreach (var file in GetProductionCSharpFiles())
+    {
+        var text = File.ReadAllText(file);
+        var tree = CSharpSyntaxTree.ParseText(text);
+        var root = tree.GetRoot();
+
+        // Busca invocaciones logger.LogXxx(...)
+        var invocations = root.DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .Where(inv => inv.Expression is MemberAccessExpressionSyntax maes &&
+                          maes.Name.Identifier.ValueText.StartsWith("Log", StringComparison.Ordinal));
+
+        foreach (var call in invocations)
+        {
+            // ¿Argumento 1 es expresión interpolada?  logger.LogInformation($"...")
+            var args = call.ArgumentList?.Arguments;
+            if (args is { Count: > 0 })
+            {
+                var first = args[0].Expression;
+                if (first is InterpolatedStringExpressionSyntax)
+                {
+                    Assert.False(true, $"Interpolated logging found in {file} at {call.GetLocation().GetLineSpan()}");
+                }
+            }
+        }
+    }
+}
+Esto no reemplaza CA1848 (que es compilador/analizador), pero ayuda a cazar regresiones en PRs antes de que alguien “apague” la regla.
+
+5) Pruebas (unit/integration‑light) específicas para tu TestController
+Con los cambios anteriores, añade pruebas que verifican el comportamiento observable (no CA1848 en sí, que es compile-time, pero sí señales de que usamos LoggerMessage: EventId y propiedades estructuradas).
+
+a) Test de integración light con logger “capturable”
+Crea un InMemoryLoggerProvider para capturar entradas:
+
+csharp
+Copy
+Edit
+public sealed class InMemoryLoggerProvider : ILoggerProvider
+{
+    public List<LogEntry> Entries { get; } = new();
+
+    public ILogger CreateLogger(string categoryName) => new InMemoryLogger(Entries);
+    public void Dispose() { }
+
+    private sealed class InMemoryLogger : ILogger
+    {
+        private readonly List<LogEntry> _sink;
+        public InMemoryLogger(List<LogEntry> sink) => _sink = sink;
+        public IDisposable BeginScope<TState>(TState state) => NullScope.Instance;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            _sink.Add(new LogEntry(logLevel, eventId, state, exception, formatter(state, exception)));
+        }
+        private sealed class NullScope : IDisposable { public static readonly NullScope Instance = new(); public void Dispose() { } }
+    }
+}
+
+public readonly record struct LogEntry(LogLevel Level, EventId EventId, object State, Exception? Exception, string Message);
+b) Test: TestController_Ping_EmitsStructuredLog
+Si usas WebApplicationFactory<Program>, registra el provider en DI (o crea el InMemoryLoggerProvider y arranca una app mínima). Luego:
+
+csharp
+Copy
+Edit
+[Fact]
+public async Task TestController_Ping_EmitsStructuredLog()
+{
+    var provider = new InMemoryLoggerProvider();
+    using var app = TestServerFactory.CreateWithLoggerProvider(provider); // tu helper que monta el WebApp de pruebas
+
+    var client = app.CreateClient();
+    var resp = await client.GetAsync("/api/test/ping");
+    resp.EnsureSuccessStatusCode();
+
+    // Aserta: debería existir EventId 2001 (TestEndpointHit) en categoría del controller
+    Assert.Contains(provider.Entries, e => e.EventId.Id == 2001 && e.Level == LogLevel.Information);
+}
+Esa aserción no sólo valida el “happy path” del endpoint de test, también evidencia que se usó LoggerMessage (por el EventId estable), y te protege contra reintroducción de LogInformation($"...").
+
+c) Test: TestController_InvalidUsage_LogsWarningWithReason
+Invoca la ruta que dispara una validación inválida y verifica EventId = 2002 + mensaje (o mejor, que el estado estructurado contiene Reason si lo serializas desde la plantilla; según ILogger, puedes inspeccionar state como IReadOnlyList<KeyValuePair<string, object?>> y verificar presence de "Reason").
+
+Checklist rápido para salir del atasco de compilación
+Aplica el patch de TestControllerLogs y reemplazos en TestController.cs.
+
+Confirma .editorconfig con dotnet_diagnostic.CA1848.severity = error.
+
+dotnet clean + dotnet build: debe compilar.
+
+Corre tests: los del Conjunto A + los nuevos de TestController_Ping_EmitsStructuredLog.
+
+Haz un grep por $"…" en src/AutoDocOps.WebAPI y src/AutoDocOps.Infrastructure: elimina cualquier resto.
+
+Sube el cambio; el pipeline ya no debería bloquearse por CA1848.
+
+Si, aun así, el error persiste
+Verifica que no haya directivas #pragma warning disable CA1848 ocultas.
+
+Confirma que el archivo que falla realmente es el actualizado (p. ej., no hay otro TestController.cs en otra carpeta con mismo nombre).
+
+Revisa versiones de analyzers y que no haya un .editorconfig más interno que overridee la severidad.
+
+Si la app usa Minimal APIs y no hay “controlador” como tal, localiza los app.MapGet/MapPost con logger.Log... y pásalos a LoggerMessage igual que hiciste con Webhook.
+
+Resultado esperado
+Compilación verde (CA1848 resuelto) sin “trabajar alrededor”.
+
+Logs estructurados, con EventId estable, cero interpolaciones.
+
+Tests que aseguran que el patrón correcto quedó implantado (y evitan regresiones).
+
+Alineado con el plan: observabilidad con logs consistentes, bajo overhead y p95 estable.

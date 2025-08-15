@@ -1,92 +1,266 @@
-Fix Rápido para el Test Fallando (WebhookMetricsListenerTests.PostingInvalidWebhook_IncrementsRequestCounter)
-El error es que el counter de requests no se incrementa para webhooks inválidos (seen == 0), probablemente porque la métrica se aplica después de validaciones (e.g., early return en invalid cases). Esto es común en middleware o handlers—las métricas deben ser "early" para capturar todos los requests, válidos o no (alignado con OpenTelemetry y PDF: traces/logs en todo el flujo, métricas Prometheus expuestas en /metrics).
+1) CodeStandardsTests.GetSolutionPath() — cache + búsqueda robusta y acotada
+Problema: Recorre directorios sin límite y depende de GetCurrentDirectory().
+Riesgo: latencias intermitentes en CI, resultados no deterministas si el runner cambia el CWD.
 
-Actualiza WebhookMetricsListener.cs (en Infrastructure.Metrics, asumiendo estructura Clean Arch):
+Fix (drop‑in): cache con Lazy<string>, override por ENV, límite de profundidad y fallback al raíz del repo (detectando .git o Directory.Build.props). Esto evita coste por prueba y cumple el objetivo de tiempos p95 consistentes. Plan_Backend_AutoDocOps…
 
-Mueve el incremento al inicio del handler, y agrega un counter separado para inválidos (mejora observabilidad).
 
-csharpusing Prometheus;  // Asegura import (del stack: OTEL metrics → Prometheus → Grafana)
-
-public class WebhookMetricsListener  // O el nombre exacto de tu clase
+// En CodeStandardsTests.cs (clase estática o dentro del test class como static)
+private static readonly Lazy<string> _solutionPath = new(() =>
 {
-    private static readonly Counter RequestsTotal = Metrics.CreateCounter("webhook_requests_total", "Total webhook requests received");
-    private static readonly Counter InvalidRequests = Metrics.CreateCounter("webhook_invalid_total", "Invalid webhook requests");
+    // 1) Override opcional en CI/local
+    var env = Environment.GetEnvironmentVariable("SOLUTION_ROOT");
+    if (!string.IsNullOrWhiteSpace(env) && Directory.Exists(env)) return Path.GetFullPath(env);
 
-    public async Task HandleWebhookAsync(HttpContext context)  // O el método principal
+    // 2) Base estable: ubicación del ensamblado de tests
+    var dir = new DirectoryInfo(AppContext.BaseDirectory);
+    const int maxHops = 12; // cota dura para evitar recorridos largos
+    int hops = 0;
+
+    while (dir != null && hops++ < maxHops)
     {
-        RequestsTotal.Inc();  // Incrementa SIEMPRE al inicio (captura todos, incluso inválidos/5xx)
+        // Preferencias de marcador de raíz
+        if (dir.GetFiles("*.sln").Length > 0) return dir.FullName;
+        if (dir.GetDirectories(".git").Length > 0) return dir.FullName;
+        if (dir.GetFiles("Directory.Build.props").Length > 0) return dir.FullName;
+        dir = dir.Parent;
+    }
 
-        if (!IsValidWebhook(context.Request))  // Tu lógica de validación (e.g., signature check para Stripe webhooks)
+    throw new InvalidOperationException("Solution root not found within bounded search.");
+});
+
+private static string GetSolutionPath() => _solutionPath.Value;
+Extra: documenta en el pipeline SOLUTION_ROOT para evitar búsquedas. (Alinea con CI/CD claro y reproducible.) Plan_Backend_AutoDocOps…
+
+2) Constante duplicada en overflow test — única fuente de verdad
+Problema: OverflowTriggerOffsetTicks redefinida en el test.
+Riesgo: drift al cambiar valores.
+
+Fix (drop‑in):
+
+
+-    private const long OverflowTriggerOffsetTicks = 1000;
+
+ [Fact]
+ public void BackoffHelperCheckedArithmeticOnOverflowReturnsMax()
+ {
+     // Arrange - value chosen to overflow when doubled
+-    var overflowProneValueTicks = checked(long.MaxValue - OverflowTriggerOffsetTicks);
++    var overflowProneValueTicks = checked(long.MaxValue - TestConstants.Overflow.OverflowTriggerOffsetTicks);
+Si TestConstants.Overflow aún no existe, muévela a un único archivo compartido dentro de tests/AutoDocOps.Tests/TestConstants.cs.
+
+3) ReadBodyAtMostAsync — buffer incremental y presión de memoria baja
+Problema: ArrayPool<byte>.Shared.Rent(maxBytes) siempre renta el tamaño máximo (256 KiB), aunque el cuerpo sea pequeño.
+Riesgo: presión de GC/LOH bajo carga (webhooks concurrentes). El plan exige p95 estable y métricas finas. Plan_Backend_AutoDocOps…
+
+Fix (drop‑in): crecimiento exponencial, BodyReader, cota dura y devolución correcta al pool.
+
+
+static async Task<(bool ok, string body, bool tooLarge)> ReadBodyAtMostAsync(
+    HttpRequest request, int maxBytes, CancellationToken ct)
+{
+    var reader = request.BodyReader;
+    var pool = ArrayPool<byte>.Shared;
+
+    var capacity = Math.Min(8192, maxBytes); // 8 KiB inicial
+    byte[] buffer = pool.Rent(capacity);
+    int written = 0;
+
+    try
+    {
+        while (true)
         {
-            InvalidRequests.Inc();  // Counter específico para tracking
-            context.Response.StatusCode = 400;  // O maneja error como ProblemDetails (PDF: map exceptions a 4xx/5xx)
-            await context.Response.WriteAsync("Invalid webhook");
-            return;
+            ReadResult read = await reader.ReadAsync(ct);
+            var buf = read.Buffer;
+
+            foreach (var segment in buf)
+            {
+                var needed = written + segment.Length;
+                if (needed > maxBytes)
+                    return (false, string.Empty, tooLarge: true);
+
+                if (needed > buffer.Length)
+                {
+                    // crecer ~x2 sin superar maxBytes
+                    var newSize = Math.Min(Math.Max(buffer.Length * 2, needed), maxBytes);
+                    var newBuf = pool.Rent(newSize);
+                    Buffer.BlockCopy(buffer, 0, newBuf, 0, written);
+                    pool.Return(buffer, clearArray: false);
+                    buffer = newBuf;
+                }
+
+                segment.CopyTo(buffer.AsSpan(written));
+                written += segment.Length;
+            }
+
+            reader.AdvanceTo(buf.End);
+
+            if (read.IsCompleted) break;
         }
 
-        // Procesa webhook válido...
+        var body = Encoding.UTF8.GetString(buffer, 0, written);
+        return (true, body, tooLarge: false);
+    }
+    finally
+    {
+        pool.Return(buffer, clearArray: false);
+    }
+}
+Complemento: centraliza el límite por endpoint en opciones:
+
+
+builder.Services.Configure<WebhookLimitsOptions>(o => o.MaxBytes = 256 * 1024);
+y úsalo en RequestSizeLimitAttribute para coherencia operativa. (Métrica/alerta si hay tooLarge.) Plan_Backend_AutoDocOps…
+
+4) HandleStripeWebhookAsync — separa responsabilidades + seguridad / latencia
+Problema: método >100 líneas con validación, parseo, procesamiento y auditoría mezclados.
+Riesgo: difícil de testear, eleva complejidad ciclomática, posibilidad de errores “silenciosos”. El plan pide logs estructurados, métricas con Prometheus y rate‑limit global. Plan_Backend_AutoDocOps… Plan_Backend_AutoDocOps…
+
+Refactor propuesto (estructura):
+
+
+app.MapPost("/stripe/webhook", HandleStripeWebhookAsync)
+   .Accepts<string>("application/json")
+   .RequireRateLimiting("stripe-webhook")
+   .WithRequestTimeout(TimeSpan.FromSeconds(5))
+   .WithMetadata(new RequestSizeLimitAttribute(WebhookLimits.MaxBytes))
+   .WithName("StripeWebhook").WithTags("Billing").AllowAnonymous();
+
+static async Task<IResult> HandleStripeWebhookAsync(HttpContext ctx, ILogger<Program> log, IStripeService stripe, IWebhookMetrics metrics, IAuditSink audit, IOptions<WebhookLimitsOptions> opt, CancellationToken ct)
+{
+    var sw = ValueStopwatch.StartNew();
+    try
+    {
+        var (ok, raw, tooLarge) = await ReadBodyAtMostAsync(ctx.Request, opt.Value.MaxBytes, ct);
+        if (!ok) { metrics.ObserveInvalid("stripe", tooLarge ? "too_large" : "read_error"); return Results.StatusCode(StatusCodes.Status413PayloadTooLarge); }
+
+        var evt = ValidateAndParseStripeEvent(ctx.Request, raw, log, metrics);
+        if (evt == null) return Results.StatusCode(StatusCodes.Status400BadRequest);
+
+        await ProcessStripeEventAsync(evt, stripe, metrics, ct);
+        _ = audit.TryWriteAsync(new AuditRecord("stripe", evt.Id, evt.Type, ctx.TraceIdentifier)); // fire-and-forget
+        return Results.Ok();
+    }
+    catch (OperationCanceledException)
+    {
+        metrics.ObserveTimeout("stripe"); return Results.StatusCode(StatusCodes.Status504GatewayTimeout);
+    }
+    catch (StripeSignatureException sig)
+    {
+        log.ErrorProcessingStripeWebhook("signature_invalid", sig);
+        metrics.ObserveInvalid("stripe", "sig_invalid");
+        return Results.StatusCode(StatusCodes.Status401Unauthorized);
+    }
+    catch (Exception ex)
+    {
+        log.ErrorProcessingStripeWebhook("other", ex);
+        metrics.ObserveInvalid("stripe", "other");
+        return Results.StatusCode(StatusCodes.Status500InternalServerError);
+    }
+    finally
+    {
+        metrics.ObserveLatency("stripe", sw.GetElapsedTime());
     }
 }
 
-Actualiza el Test (WebhookMetricsListenerTests.cs):
-
-Asegura que el assert chequee el counter correcto post-request. Usa FluentAssertions como en tu output.
-Si usas un metrics collector in-memory para tests (recomendado, evita scrape real de /metrics).
-
-csharpusing FluentAssertions;
-using Prometheus;
-using Microsoft.AspNetCore.Http;  // Para HttpContext mock
-
-[Fact]
-public async Task PostingInvalidWebhook_IncrementsRequestCounter()
+static StripeEvent? ValidateAndParseStripeEvent(HttpRequest req, string raw, ILogger log, IWebhookMetrics metrics)
 {
-    // Arrange: Setup mocks (e.g., HttpClient o TestServer para simular POST)
-    var collector = Metrics.DefaultRegistry.CollectAndExportAsTextAsync();  // O usa un in-memory exporter para tests
-    var initialTotal = await GetCounterValue("webhook_requests_total");  // Helper para leer valor actual
-
-    // Act: Simula POST inválido
-    var invalidContent = new StringContent("invalid_payload");  // Ejemplo; ajusta a tu webhook payload
-    var response = await _client.PostAsync("/webhook", invalidContent);  // _client es HttpClient mock o TestServer
-
-    // Assert
-    var seen = await GetCounterValue("webhook_requests_total") - initialTotal;
-    seen.Should().BeGreaterThan(0, "because posting an invalid webhook must increment request counter");
+    // Aquí valida firma (header), tolerancias, tipo de contenido, etc.
+    // Devuelve null si inválido, levantando métricas específicas.
+    // Usa LoggerMessage y no strings literales.
+    ...
 }
 
-private async Task<double> GetCounterValue(string name)
+static Task ProcessStripeEventAsync(StripeEvent evt, IStripeService svc, IWebhookMetrics metrics, CancellationToken ct)
 {
-    // Helper: Exporta y parsea (o usa CollectorRegistry en tests)
-    using var stream = new MemoryStream();
-    await Metrics.DefaultRegistry.CollectAndExportAsTextAsync(stream);
-    stream.Position = 0;
-    using var reader = new StreamReader(stream);
-    var text = await reader.ReadToEndAsync();
-    var match = Regex.Match(text, @$"{name}{{.*}} (\d+)");
-    return match.Success ? double.Parse(match.Groups[1].Value) : 0;
+    // Switch por tipo, idempotencia por EventId, reintentos internos si aplica
+    ...
 }
+Beneficios: pruebas unitarias por función, logs con LoggerMessage, métrica de latencia p95 y etiquetado por causa de fallo (sig_invalid, too_large…). Encaja con las prácticas de observabilidad y rate‑limit del plan. Plan_Backend_AutoDocOps… Plan_Backend_AutoDocOps…
 
-Nota: Evita llamadas reales (usa mocks como en PDF: WireMock para APIs externas). Si el webhook es para Stripe (billing), mockea con Moq<istripeclient> como en fixes previos.</istripeclient>
+5) Heurística IsInTestOrCommentContext — Roslyn light en vez de cadenas
+Problema: condicionales largas y frágiles; TODO pendiente.
+Riesgo: falsos positivos/negativos al escanear strings “hardcoded”.
 
-
-Verificación:
-
-dotnet build --configuration Release
-dotnet test --no-build --configuration Release (debería pasar ahora; duration ~14s como en tu output).
-Chequea cobertura: dotnet test --collect:"XPlat Code Coverage" (report en TestResults; ajusta si <80%).
-Beneficios: Mejora métricas (QPS, errores), alinea con escalabilidad (PgBouncer si QPS>300) y alertas.
+Fix (robusto y rápido): usa Roslyn para separar comentarios (trivia) y string literals; y para “contexto de test”, decide por atributo [Fact]/[Theory] o clase *Tests. El proyecto ya contempla microservicio Roslyn y xUnit, por lo que añadir Microsoft.CodeAnalysis.CSharp en tests es coherente con el stack. Plan_Backend_AutoDocOps… Plan_Backend_AutoDocOps…
 
 
+private static bool IsInTestOrCommentContext(string filePath, int position)
+{
+    var text = File.ReadAllText(filePath);
+    var tree = CSharpSyntaxTree.ParseText(text);
+    var root = tree.GetRoot();
 
-Para el Test Skipped (OpenAILlmClientSecurityTests.Constructor_WithInvalidAzureEndpoint_ShouldThrowSecurityException_WhenValidationImplemented)
-Es esperado (placeholder para "when validation implemented", como en PDF: evitar llamadas reales a OpenAI con WireMock). No bloquea—puedes implementarlo después en Fase 4 (Chat & embeddings). Si quieres activarlo ahora:
+    // 1) Comentarios
+    var trivia = root.FindTrivia(position, findInsideTrivia: true);
+    if (trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) || trivia.IsKind(SyntaxKind.MultiLineCommentTrivia))
+        return true;
 
-Remueve [Skip] o [Fact(Skip="...")].
-Implementa validación en constructor: if (!Uri.IsWellFormedUriString(azureEndpoint, UriKind.Absolute)) throw new SecurityException("Invalid Azure endpoint");.
-Test: Assert.Throws<securityexception>(() => new OpenAILlmClient(invalidEndpoint)).</securityexception>
+    // 2) Test methods o clases *Tests
+    var token = root.FindToken(position);
+    var method = token.Parent?.AncestorsAndSelf().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+    var type = token.Parent?.AncestorsAndSelf().OfType<ClassDeclarationSyntax>().FirstOrDefault();
 
-Siguientes Pasos (Basado en tu Resumen)
+    bool inTestMethod = method?.AttributeLists
+        .SelectMany(a => a.Attributes)
+        .Any(a => a.Name.ToString().Contains("Fact") || a.Name.ToString().Contains("Theory")) == true;
 
-CS0219 en TestConstantsTests: Limpia variables dummy (e.g., _ = badTimeout;) o remueve—0.1 día.
-Cobertura: Ejecuta con Coverlet; si bajo, agrega tests para error paths en Billing/Memory.
-Scripts Adicionales: Puedo generar k6 para load tests (e.g., /generate <250ms p95) o ZAP baseline (0 críticas/medias)—dime si lo quieres.
-Deploy: Una vez fix, push y confirma CI verde; deploy staging con Terraform/Fly.io.
+    bool inTestsClass = type?.Identifier.ValueText.EndsWith("Tests", StringComparison.Ordinal) == true;
+
+    return inTestMethod || inTestsClass;
+}
+Resultado: inspección de estándares más precisa y estable.
+
+APLICAR TESTS PARA VALIDAR LO APLICADO
+
+
+Conjunto A (Puntos 1–5): estabilidad en tiempo de ejecución y robustez
+GetSolutionPath: caché + búsqueda acotada
+Tests propuestos (unit):
+
+GetSolutionPath_UsesEnvOverride_WhenSet: si SOLUTION_ROOT existe, lo prioriza.
+
+GetSolutionPath_BoundedSearch_MaxDepth: no recorre más de N niveles (evita “walks” infinitos).
+
+GetSolutionPath_FindsRepoRoot_ByMarkers: detecta .sln/.git/Directory.Build.props.
+(Impacto: CI estable y reproducible, base para tiempos p95 consistentes en el pipeline.)
+
+Constante de overflow: única fuente de verdad
+Tests propuestos (unit):
+
+BackoffHelper_Overflow_UsesSharedConstant: el test referencia TestConstants.Overflow.OverflowTriggerOffsetTicks (no redefinida).
+
+BackoffHelper_DoubleOverflow_ReturnsMax: con valor propenso a overflow, NextDelay devuelve maxDelay (no lanza).
+(Impacto: elimina drift y falsos verdes en CI.)
+
+ReadBodyAtMostAsync: buffer incremental (menos presión de memoria)
+Tests propuestos (unit + “micro‑integ” con BodyReader fake):
+
+ReadBodyAtMost_SmallPayload_NoResize: para ≤8KiB no crece el buffer.
+
+ReadBodyAtMost_GrowsExponentially_UntilNeeded: verifica escalado ~x2 sin exceder maxBytes.
+
+ReadBodyAtMost_TooLarge_Returns413Flag: marca tooLarge y el caller responde 413.
+(Impacto: GC más predecible durante picos, clave para p95 bajo carga.)
+
+HandleStripeWebhookAsync: separar validación, parseo, proceso y auditoría
+Tests propuestos (integration-light con server in‑memory):
+
+StripeWebhook_InvalidSignature_Returns401_MetricsTagged: 401 y webhook_invalid_total{reason="sig_invalid"} incrementa.
+
+StripeWebhook_TooLarge_Returns413: cuando excede RequestSizeLimit.
+
+StripeWebhook_ValidEvent_200_ProcessesOnce: idempotencia por EventId (no reprocesa).
+
+StripeWebhook_Timeout_504_Observed: simula OperationCanceledException → 504 + métrica de timeout.
+(Impacto: mantenibilidad + seguridad; mapea correctamente 4xx/5xx y observa latencias/causas.)
+
+IsInTestOrCommentContext → Roslyn “light”
+Tests propuestos (unit, sobre archivos sintéticos):
+
+Detector_Comments_AreIgnored: strings dentro de comentarios no cuentan como “hardcoded”.
+
+Detector_FactOrTheory_Methods_AreTestContext: literals en métodos [Fact]/[Theory] se ignoran para la regla.
+
+Detector_NonTestCode_FindsHardcodedString: literal en código productivo dispara la violación de estándar.
+(Impacto: menos falsos positivos en tu prueba de estándares; disciplina sin ruido.)

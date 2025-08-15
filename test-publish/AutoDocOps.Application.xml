@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>AutoDocOps.Application</name>
+    </assembly>
+    <members>
+        <member name="T:AutoDocOps.Application.Common.Constants.MetricTags">
+            <summary>
+            Centralized metric tag keys and values to prevent typos and control cardinality.
+            </summary>
+        </member>
+    </members>
+</doc>

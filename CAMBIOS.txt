@@ -1,0 +1,51 @@
+1) Verificación local (misma configuración que CI)
+# build limpio con analizadores estrictos
+dotnet clean
+dotnet build -c Release /warnaserror
+
+# tests con gate de cobertura (= al de CI)
+dotnet test AutoDocOps.sln -c Release \
+  /p:CollectCoverage=true \
+  /p:CoverletOutputFormat=cobertura \
+  /p:CoverletOutput=./TestResults/Coverage/ \
+  /p:Threshold=80 /p:ThresholdType=line /p:ThresholdStat=total
+
+2) Revisa que todo esté “stageable”
+
+Incluye SIEMPRE (según tus cambios):
+
+Código: *Logs.cs, *Options.cs, *Metrics*.cs, controladores/servicios tocados.
+
+Tests: RateLimitTests, MetricsEndpointTests, WebhookEndToEndTests, CiGuardTests, Roslyn/CodeStandards.
+
+Config: appsettings.Production.json (sin secretos), .editorconfig, alerts.yml, .github/workflows/ci.yml, README/LEEME.
+
+git status
+git add -A
+
+3) Commit único (los 10 puntos + tests)
+
+Usa un mensaje claro (conventional commit) que deje trazabilidad:
+
+git commit -m "feat(backend): aplicar 10 puntos (A+B) con tests, métricas y gates
+
+Conjunto A (1–5):
+1) GetSolutionPath cache + búsqueda acotada (SOLUTION_ROOT)
+2) Constante OverflowTriggerOffsetTicks unificada (TestConstants.Overflow)
+3) ReadBodyAtMostAsync buffer incremental (cota por endpoint)
+4) Stripe webhook: validación/parseo/proceso/auditoría separadas
+5) Detector Roslyn para estándares (sin falsos positivos)
+
+Conjunto B (6–10):
+6) LoggerMessage estable en hot-path (Generate/Test + servicios)
+7) Gate cobertura CI ≥80% + artifact cobertura
+8) RateLimit/WebhookLimits centralizados (Options + appsettings)
+9) Métricas Prometheus (histograma p95, counters invalid/timeout) + alerts.yml
+10) Tests E2E (idempotencia), rate-limit (429), size limit (413), metrics endpoint, CI guard
+
+Docs: LEEME/README_Testing actualizado. CA1848/CA2007 OK."
+
+
+Si usas DCO/firmas: añade --signoff al commit o configura user.signingkey para -S.
+
+4) Push de la rama

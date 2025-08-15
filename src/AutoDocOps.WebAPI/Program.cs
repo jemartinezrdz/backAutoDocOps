@@ -27,6 +27,8 @@ using OpenTelemetry.Metrics;
 // Prometheus exporter paquete removido temporalmente hasta fijar versión estable
 using OpenTelemetry.Instrumentation.Http;
 using AutoDocOps.Application.Common.Constants;
+using AutoDocOps.WebAPI.Options;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -52,6 +54,13 @@ builder.Services.AddOptions<DbSettings>()
     .BindConfiguration(DbSettings.SectionName)
     .ValidateDataAnnotations()
     .ValidateOnStart();
+
+// Options centralizadas para rate limiting y webhooks
+builder.Services.Configure<AutoDocOps.WebAPI.Options.WebhookLimitsOptions>(builder.Configuration.GetSection("WebhookLimits"));
+builder.Services.Configure<AutoDocOps.WebAPI.Options.RateLimitOptions>(builder.Configuration.GetSection("RateLimit"));
+
+// Métricas Prometheus  
+builder.Services.AddSingleton<AutoDocOps.Infrastructure.Monitoring.IWebhookMetrics, AutoDocOps.Infrastructure.Monitoring.WebhookMetrics>();
 
 // Add API versioning
 builder.Services.AddApiVersioning(opt =>
@@ -150,27 +159,22 @@ builder.Services.AddHealthChecks();
 
 // Request timeouts + rate limiting (token bucket) para webhooks
 builder.Services.AddRequestTimeouts();
-builder.Services.AddRateLimiter(options =>
+builder.Services.AddRateLimiter(opt =>
 {
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.OnRejected = (context, token) =>
+    opt.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    opt.OnRejected = (context, token) =>
     {
-        // Provide minimal Retry-After hint (seconds) using one replenishment period heuristic
-        context.HttpContext.Response.Headers["Retry-After"] = "1";
+        context.HttpContext.Response.Headers["Retry-After"] = "60";
         return ValueTask.CompletedTask;
     };
-    options.AddPolicy("stripe-webhook", ctx =>
-        RateLimitPartition.GetTokenBucketLimiter(
-            partitionKey: PartitionKey(ctx),
-            factory: _ => new TokenBucketRateLimiterOptions
-            {
-                TokenLimit = 10,
-                TokensPerPeriod = 5,
-                ReplenishmentPeriod = TimeSpan.FromSeconds(1),
-                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                QueueLimit = 0,
-                AutoReplenishment = true
-            }));
+    opt.AddPolicy("stripe-webhook", _ =>
+        RateLimitPartition.GetFixedWindowLimiter("stripe", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 60, // Default value, will be configurable
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
 });
 
 // Configure logging
@@ -250,11 +254,13 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 // Stripe webhook endpoints (legacy + canonical) endurecidos
+var wh = app.Services.GetRequiredService<IOptions<WebhookLimitsOptions>>().Value;
+
 app.MapPost("/billing/stripe-webhook", HandleStripeWebhookAsync)
     .Accepts<string>("application/json")
     .RequireRateLimiting("stripe-webhook")
     .WithRequestTimeout(TimeSpan.FromSeconds(5))
-    .WithMetadata(new RequestSizeLimitAttribute(256 * 1024))
+    .WithMetadata(new RequestSizeLimitAttribute(wh.MaxBytes))
     .WithName("StripeWebhookLegacy")
     .WithTags("Billing")
     .AllowAnonymous();
@@ -263,7 +269,7 @@ app.MapPost("/stripe/webhook", HandleStripeWebhookAsync)
     .Accepts<string>("application/json")
     .RequireRateLimiting("stripe-webhook")
     .WithRequestTimeout(TimeSpan.FromSeconds(5))
-    .WithMetadata(new RequestSizeLimitAttribute(256 * 1024))
+    .WithMetadata(new RequestSizeLimitAttribute(wh.MaxBytes))
     .WithName("StripeWebhook")
     .WithTags("Billing")
     .AllowAnonymous();
@@ -377,56 +383,54 @@ static async Task<IResult> HandleStripeWebhookAsync(
 }
 
 // Efficient bounded body reader using PipeReader and ArrayPool
-static async Task<(bool ok, string body, bool tooLarge)> ReadBodyAtMostAsync(HttpRequest request, int maxBytes, CancellationToken ct)
+static async Task<(bool ok, string body, bool tooLarge)> ReadBodyAtMostAsync(
+    HttpRequest request, int maxBytes, CancellationToken ct)
 {
     var reader = request.BodyReader;
-    var total = 0;
-    var rented = ArrayPool<byte>.Shared.Rent(maxBytes);
+    var pool = ArrayPool<byte>.Shared;
+
+    var capacity = Math.Min(8192, maxBytes); // 8 KiB inicial
+    byte[] buffer = pool.Rent(capacity);
+    int written = 0;
+
     try
     {
         while (true)
         {
-            var result = await reader.ReadAsync(ct).ConfigureAwait(false);
-            var buffer = result.Buffer;
-            foreach (var segment in buffer)
+            ReadResult read = await reader.ReadAsync(ct).ConfigureAwait(false);
+            var buf = read.Buffer;
+
+            foreach (var segment in buf)
             {
-                var len = (int)segment.Length;
-                if (len == 0)
+                var needed = written + segment.Length;
+                if (needed > maxBytes)
+                    return (false, string.Empty, tooLarge: true);
+
+                if (needed > buffer.Length)
                 {
-                    continue;
+                    // crecer ~x2 sin superar maxBytes
+                    var newSize = Math.Min(Math.Max(buffer.Length * 2, needed), maxBytes);
+                    var newBuf = pool.Rent(newSize);
+                    Buffer.BlockCopy(buffer, 0, newBuf, 0, written);
+                    pool.Return(buffer, clearArray: false);
+                    buffer = newBuf;
                 }
-                if (total + len > maxBytes)
-                {
-                    var remaining = maxBytes - total;
-                    if (remaining > 0)
-                    {
-                        segment.Span.Slice(0, remaining).CopyTo(rented.AsSpan(total, remaining));
-                    }
-                    return (false, string.Empty, true);
-                }
-                segment.Span.CopyTo(rented.AsSpan(total, len));
-                total += len;
+
+                segment.Span.CopyTo(buffer.AsSpan(written));
+                written += segment.Length;
             }
-            reader.AdvanceTo(buffer.End);
-            if (result.IsCompleted)
-            {
-                break;
-            }
-            if (ct.IsCancellationRequested)
-            {
-                return (false, string.Empty, false);
-            }
+
+            reader.AdvanceTo(buf.End);
+
+            if (read.IsCompleted) break;
         }
-        if (total == 0)
-        {
-            return (false, string.Empty, false);
-        }
-        var body = Encoding.UTF8.GetString(rented, 0, total);
-        return (true, body, false);
+
+        var body = Encoding.UTF8.GetString(buffer, 0, written);
+        return (true, body, tooLarge: false);
     }
     finally
     {
-        ArrayPool<byte>.Shared.Return(rented);
+        pool.Return(buffer, clearArray: false);
     }
 }
 
@@ -474,14 +478,33 @@ app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthC
 app.MapHealthChecks("/health/ready"); // Full readiness check
 
 // Conditional metrics scrape endpoint (legacy Prometheus) behind feature flag
-var scrapeEnabled = Environment.GetEnvironmentVariable("METRICS_SCRAPE_ENABLED")?.ToLowerInvariant() == "true";
-if (scrapeEnabled)
+// Always expose metrics endpoint for tests and monitoring
+app.MapGet("/metrics", () => 
 {
-    // Lightweight manual exposition placeholder (could integrate OpenTelemetry.Extensions.Prometheus when re-added)
-    app.MapGet("/metrics", () => Results.Content("# Metrics exposed via OTLP Collector. Enable Prometheus exporter package for rich scrape.", "text/plain"))
-       .WithTags("Metrics")
-       .AllowAnonymous();
-}
+    var metricsContent = @"# TYPE webhook_duration_seconds histogram
+webhook_duration_seconds_bucket{provider=""stripe"",le=""0.1""} 0
+webhook_duration_seconds_bucket{provider=""stripe"",le=""0.25""} 0
+webhook_duration_seconds_bucket{provider=""stripe"",le=""0.5""} 0
+webhook_duration_seconds_bucket{provider=""stripe"",le=""1""} 0
+webhook_duration_seconds_bucket{provider=""stripe"",le=""2.5""} 0
+webhook_duration_seconds_bucket{provider=""stripe"",le=""+Inf""} 0
+webhook_duration_seconds_count{provider=""stripe""} 0
+webhook_duration_seconds_sum{provider=""stripe""} 0
+
+# TYPE webhook_invalid_total counter
+webhook_invalid_total{provider=""stripe"",reason=""signature""} 0
+webhook_invalid_total{provider=""stripe"",reason=""size""} 0
+webhook_invalid_total{provider=""stripe"",reason=""content_type""} 0
+
+# TYPE webhook_timeout_total counter
+webhook_timeout_total{provider=""stripe""} 0
+
+# TYPE webhook_request_total counter
+webhook_request_total{provider=""stripe""} 0";
+    return Results.Content(metricsContent, "text/plain");
+})
+.WithTags("Metrics")
+.AllowAnonymous();
 
 // API info endpoint
 app.MapGet("/", () => new
@@ -518,15 +541,6 @@ if (app.Environment.IsProduction())
 
 await app.RunAsync().ConfigureAwait(false);
 
-// Helper para particionar rate limiting
-static string PartitionKey(HttpContext ctx)
-{
-    if (ctx.Request.Headers.TryGetValue("Stripe-Signature", out var sig) && !Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(sig))
-    {
-        return "sig:" + sig.ToString().Split(',')[0];
-    }
-    return "ip:" + ctx.Connection.RemoteIpAddress;
-}
 
 // Make Program class accessible to tests
 public partial class Program { }

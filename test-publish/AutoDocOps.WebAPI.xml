@@ -1,0 +1,133 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>AutoDocOps.WebAPI</name>
+    </assembly>
+    <members>
+        <member name="M:AutoDocOps.WebAPI.Controllers.GenerateController.GenerateDocumentation(AutoDocOps.WebAPI.Controllers.GenerateDocumentationRequest)">
+            <summary>
+            Generate documentation for a project
+            </summary>
+            <param name="request">Documentation generation request</param>
+            <returns>Generation job details</returns>
+        </member>
+        <member name="M:AutoDocOps.WebAPI.Controllers.GenerateController.GetGenerationStatus(System.Guid)">
+            <summary>
+            Get generation status and progress
+            </summary>
+            <param name="projectId">Project ID</param>
+            <returns>Generation status</returns>
+        </member>
+        <member name="M:AutoDocOps.WebAPI.Controllers.GenerateController.CancelGeneration(System.Guid)">
+            <summary>
+            Cancel documentation generation
+            </summary>
+            <param name="projectId">Project ID</param>
+            <returns>Cancellation result</returns>
+        </member>
+        <member name="T:AutoDocOps.WebAPI.Controllers.GenerateDocumentationRequest">
+            <summary>
+            Request model for generating documentation
+            </summary>
+        </member>
+        <member name="M:AutoDocOps.WebAPI.Controllers.GenerateDocumentationRequest.#ctor(System.Guid,System.String,System.String,System.Guid)">
+            <summary>
+            Request model for generating documentation
+            </summary>
+        </member>
+        <member name="T:AutoDocOps.WebAPI.Controllers.GenerationStatusResponse">
+            <summary>
+            Response model for generation status
+            </summary>
+        </member>
+        <member name="M:AutoDocOps.WebAPI.Controllers.GenerationStatusResponse.#ctor(System.Guid,System.Guid,System.String,System.Int32,System.String,System.DateTime,System.Nullable{System.DateTime},System.String)">
+            <summary>
+            Response model for generation status
+            </summary>
+        </member>
+        <member name="M:AutoDocOps.WebAPI.Controllers.PassportsController.GetPassport(System.Guid)">
+            <summary>
+            Get a specific passport by ID
+            </summary>
+            <param name="id">Passport ID</param>
+            <returns>Passport details</returns>
+        </member>
+        <member name="M:AutoDocOps.WebAPI.Controllers.PassportsController.GetPassportsByProject(System.Guid,System.Int32,System.Int32)">
+            <summary>
+            Get passports for a specific project
+            </summary>
+            <param name="projectId">Project ID</param>
+            <param name="page">Page number (default: 1)</param>
+            <param name="pageSize">Page size (default: 10, max: 50)</param>
+            <returns>Paginated list of passports</returns>
+        </member>
+        <member name="M:AutoDocOps.WebAPI.Controllers.PassportsController.DeletePassport(System.Guid)">
+            <summary>
+            Delete a passport
+            </summary>
+            <param name="id">Passport ID</param>
+            <returns>Deletion result</returns>
+        </member>
+        <member name="M:AutoDocOps.WebAPI.Controllers.PassportsController.DownloadPassport(System.Guid,System.String)">
+            <summary>
+            Download passport content
+            </summary>
+            <param name="id">Passport ID</param>
+            <param name="format">Download format (original, pdf, html)</param>
+            <returns>Passport content file</returns>
+        </member>
+        <member name="T:AutoDocOps.WebAPI.Controllers.PassportDto">
+            <summary>
+            Passport data transfer object
+            </summary>
+        </member>
+        <member name="M:AutoDocOps.WebAPI.Controllers.PassportDto.#ctor(System.Guid,System.Guid,System.String,System.String,System.String,System.DateTime,System.Nullable{System.DateTime},System.Guid,System.Int64,System.String)">
+            <summary>
+            Passport data transfer object
+            </summary>
+        </member>
+        <member name="T:AutoDocOps.WebAPI.Controllers.PassportListResponse">
+            <summary>
+            Response model for passport list
+            </summary>
+        </member>
+        <member name="M:AutoDocOps.WebAPI.Controllers.PassportListResponse.#ctor(System.Collections.Generic.IEnumerable{AutoDocOps.WebAPI.Controllers.PassportDto},System.Int32,System.Int32,System.Int32)">
+            <summary>
+            Response model for passport list
+            </summary>
+        </member>
+        <member name="M:AutoDocOps.WebAPI.Controllers.ProjectsController.GetProjects(System.Guid,System.Int32,System.Int32)">
+            <summary>
+            Get projects for an organization with pagination
+            </summary>
+            <param name="organizationId">Organization ID</param>
+            <param name="page">Page number (default: 1)</param>
+            <param name="pageSize">Page size (default: 10, max: 100)</param>
+            <returns>Paginated list of projects</returns>
+        </member>
+        <member name="M:AutoDocOps.WebAPI.Controllers.ProjectsController.GetProject(System.Guid)">
+            <summary>
+            Get a specific project by ID
+            </summary>
+            <param name="id">Project ID</param>
+            <returns>Project details</returns>
+        </member>
+        <member name="M:AutoDocOps.WebAPI.Controllers.ProjectsController.CreateProject(AutoDocOps.WebAPI.Controllers.CreateProjectRequest)">
+            <summary>
+            Create a new project
+            </summary>
+            <param name="request">Project creation request</param>
+            <returns>Created project</returns>
+        </member>
+        <member name="T:AutoDocOps.WebAPI.Controllers.CreateProjectRequest">
+            <summary>
+            Request model for creating a project
+            </summary>
+        </member>
+        <member name="M:AutoDocOps.WebAPI.Controllers.CreateProjectRequest.#ctor(System.String,System.String,System.String,System.String,System.Guid,System.Guid)">
+            <summary>
+            Request model for creating a project
+            </summary>
+        </member>
+    </members>
+</doc>

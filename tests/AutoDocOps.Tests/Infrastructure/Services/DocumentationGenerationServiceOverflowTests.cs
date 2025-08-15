@@ -1,3 +1,4 @@
+using AutoDocOps.Infrastructure.Constants;
 using AutoDocOps.Infrastructure.Helpers;
 using AutoDocOps.Infrastructure.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -72,13 +73,12 @@ public class DocumentationGenerationServiceOverflowTests
         Assert.Equal(maxDelay, result);
     }
 
-    private const long OverflowTriggerOffsetTicks = 1000;
 
     [Fact]
     public void BackoffHelperCheckedArithmeticOnOverflowReturnsMax()
     {
         // Arrange - value chosen to overflow when doubled
-        var overflowProneValueTicks = checked(long.MaxValue - OverflowTriggerOffsetTicks);
+        var overflowProneValueTicks = checked(long.MaxValue - TestConstants.Overflow.OverflowTriggerOffsetTicks);
         var largeDelay = new TimeSpan(overflowProneValueTicks);
         var maxDelay = TimeSpan.FromDays(365);
 

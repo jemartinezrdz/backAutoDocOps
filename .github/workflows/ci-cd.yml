@@ -44,16 +44,22 @@ jobs:
     - name: Build
       run: dotnet build --no-restore --configuration Release
     
-    - name: Run unit tests
-      run: dotnet test --no-build --configuration Release --verbosity normal --collect:"XPlat Code Coverage"
+    - name: Test with coverage gate
+      run: dotnet test AutoDocOps.sln -c Release /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:CoverletOutput=./TestResults/Coverage/ /p:Threshold=80 /p:ThresholdType=line /p:ThresholdStat=total
       env:
         ConnectionStrings__DefaultConnection: "Host=localhost;Database=autodocops_test;Username=postgres;Password=postgres"
+    
+    - name: Upload coverage artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage
+        path: ./tests/**/TestResults/Coverage/coverage.cobertura.xml
     
     - name: Upload coverage reports
       uses: codecov/codecov-action@v4
       if: always()
       with:
-        files: ./coverage.cobertura.xml
+        files: ./tests/**/TestResults/Coverage/coverage.cobertura.xml
         fail_ci_if_error: false
         token: ${{ secrets.CODECOV_TOKEN }}
 

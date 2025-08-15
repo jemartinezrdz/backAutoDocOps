@@ -1,5 +1,8 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Xunit;
 using Microsoft.Extensions.Logging;
 
@@ -10,17 +13,40 @@ namespace AutoDocOps.Tests.Infrastructure.CodeQuality;
 /// </summary>
 public class CodeStandardsTests
 {
-    private readonly string _solutionPath;
+    private static readonly Lazy<string> _solutionPath = new(() =>
+    {
+        // 1) Override opcional en CI/local
+        var env = Environment.GetEnvironmentVariable("SOLUTION_ROOT");
+        if (!string.IsNullOrWhiteSpace(env) && Directory.Exists(env)) return Path.GetFullPath(env);
+
+        // 2) Base estable: ubicación del ensamblado de tests
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        const int maxHops = 12; // cota dura para evitar recorridos largos
+        int hops = 0;
+
+        while (dir != null && hops++ < maxHops)
+        {
+            // Preferencias de marcador de raíz
+            if (dir.GetFiles("*.sln").Length > 0) return dir.FullName;
+            if (dir.GetDirectories(".git").Length > 0) return dir.FullName;
+            if (dir.GetFiles("Directory.Build.props").Length > 0) return dir.FullName;
+            dir = dir.Parent;
+        }
+
+        throw new InvalidOperationException("Solution root not found within bounded search.");
+    });
+
     private readonly string[] _sourceDirectories;
 
     public CodeStandardsTests()
     {
-        _solutionPath = GetSolutionPath();
         _sourceDirectories = new[]
         {
-            Path.Combine(_solutionPath, "src"),
+            Path.Combine(GetSolutionPath(), "src"),
         };
     }
+
+    private static string GetSolutionPath() => _solutionPath.Value;
 
     [Fact]
     public void ShouldNotUseDirectLoggerCallsCa1848Prevention()
@@ -305,19 +331,6 @@ public class CodeStandardsTests
             (violations.Count > 5 ? $"\n... and {violations.Count - 5} more" : ""));
     }
 
-    private static string GetSolutionPath()
-    {
-        var currentDirectory = Directory.GetCurrentDirectory();
-        var directory = new DirectoryInfo(currentDirectory);
-
-    while (directory != null && directory.GetFiles("*.sln").Length == 0)
-        {
-            directory = directory.Parent;
-        }
-
-        return directory?.FullName ?? throw new InvalidOperationException("Solution file not found");
-    }
-
     private static IEnumerable<string> GetCSharpFiles(string[] directories) =>
         directories
             .Where(Directory.Exists)
@@ -327,23 +340,58 @@ public class CodeStandardsTests
             .Where(p => !p.EndsWith(".Designer.cs", StringComparison.OrdinalIgnoreCase))
             .Where(p => !p.Contains("\\Migrations\\"));
 
-    /// <summary>
-    /// Heuristic method to detect test/comment context
-    /// </summary>
-    /// <remarks>
-    /// Limitations: May fail with complex string literals or nested comments.
-    /// Acceptable for code standards validation, not for critical parsing.
-    /// </remarks>
+    private static IEnumerable<string> GetProductionCSharpFiles()
+    {
+        var solutionPath = _solutionPath.Value;
+        var productionDirectories = new[]
+        {
+            Path.Combine(solutionPath, "src")
+        };
+        
+        return GetCSharpFiles(productionDirectories)
+            .Where(f => !f.Contains("Tests.cs") && 
+                       !f.Contains("\\Migrations\\") &&
+                       !f.Contains("\\TestHelper"));
+    }
+
     private static bool IsInTestOrCommentContext(string line)
     {
-        // Heuristic: quick skip for line comments, block comment markers, or common test artifacts
+        // For line-by-line analysis, we still use the heuristic approach
+        // as it's sufficient for most cases and more performant
         var trimmedLine = line.Trim();
-        if (trimmedLine.StartsWith("//", StringComparison.Ordinal) || trimmedLine.StartsWith("/*", StringComparison.Ordinal) || trimmedLine.StartsWith('*') || trimmedLine.Contains("Test", StringComparison.Ordinal))
+        if (trimmedLine.StartsWith("//", StringComparison.Ordinal) || 
+            trimmedLine.StartsWith("/*", StringComparison.Ordinal) || 
+            trimmedLine.StartsWith('*') || 
+            trimmedLine.Contains("Test", StringComparison.Ordinal))
         {
             return true;
         }
-        // TODO: Implement mini-parser to correctly ignore strings (including @"" verbatim) and /* */ blocks spanning lines.
         return false;
+    }
+
+    private static bool IsInTestOrCommentContext(string filePath, int position)
+    {
+        var text = File.ReadAllText(filePath);
+        var tree = CSharpSyntaxTree.ParseText(text);
+        var root = tree.GetRoot();
+
+        // 1) Comentarios
+        var trivia = root.FindTrivia(position, findInsideTrivia: true);
+        if (trivia.IsKind(SyntaxKind.SingleLineCommentTrivia) || trivia.IsKind(SyntaxKind.MultiLineCommentTrivia))
+            return true;
+
+        // 2) Test methods o clases *Tests
+        var token = root.FindToken(position);
+        var method = token.Parent?.AncestorsAndSelf().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+        var type = token.Parent?.AncestorsAndSelf().OfType<ClassDeclarationSyntax>().FirstOrDefault();
+
+        bool inTestMethod = method?.AttributeLists
+            .SelectMany(a => a.Attributes)
+            .Any(a => a.Name.ToString().Contains("Fact") || a.Name.ToString().Contains("Theory")) == true;
+
+        bool inTestsClass = type?.Identifier.ValueText.EndsWith("Tests", StringComparison.Ordinal) == true;
+
+        return inTestMethod || inTestsClass;
     }
 
     private static bool IsExemptController(string filePath)
@@ -356,6 +404,46 @@ public class CodeStandardsTests
         };
 
         return exemptControllers.Any(exempt => filePath.Contains(exempt));
+    }
+
+    [Fact]
+    public void NoInterpolatedLoggingInProductionCode()
+    {
+        var violations = new List<string>();
+        
+        // Recorre archivos *.cs en src/ (excluye tests/migrations)
+        foreach (var file in GetProductionCSharpFiles())
+        {
+            var text = File.ReadAllText(file);
+            var tree = CSharpSyntaxTree.ParseText(text);
+            var root = tree.GetRoot();
+
+            // Busca invocaciones logger.LogXxx(...)
+            var invocations = root.DescendantNodes()
+                .OfType<InvocationExpressionSyntax>()
+                .Where(inv => inv.Expression is MemberAccessExpressionSyntax maes &&
+                              maes.Name.Identifier.ValueText.StartsWith("Log", StringComparison.Ordinal));
+
+            foreach (var call in invocations)
+            {
+                // ¿Argumento 1 es expresión interpolada?  logger.LogInformation($"...")
+                var args = call.ArgumentList?.Arguments;
+                if (args.HasValue && args.Value.Count > 0)
+                {
+                    var first = args.Value[0].Expression;
+                    if (first is InterpolatedStringExpressionSyntax)
+                    {
+                        var location = call.GetLocation().GetLineSpan();
+                        violations.Add($"Interpolated logging found in {Path.GetFileName(file)} at line {location.StartLinePosition.Line + 1}");
+                    }
+                }
+            }
+        }
+        
+        Assert.True(violations.Count == 0,
+            $"Found {violations.Count} interpolated logging calls that should use LoggerMessage pattern:\n" +
+            string.Join("\n", violations.Take(10)) +
+            (violations.Count > 10 ? $"\n... and {violations.Count - 10} more" : ""));
     }
 }
 

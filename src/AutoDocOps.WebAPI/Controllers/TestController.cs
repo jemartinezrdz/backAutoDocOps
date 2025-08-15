@@ -33,14 +33,14 @@ public class TestController : ControllerBase
         ArgumentNullException.ThrowIfNull(key);
         try
         {
-            var value = await _cacheService.GetAsync<string>(key);
+            var value = await _cacheService.GetAsync<string>(key).ConfigureAwait(false);
             
             if (value == null)
             {
                 var newValue = $"Generated value for {key} at {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC";
-                await _cacheService.SetAsync(key, newValue, TimeSpan.FromMinutes(5));
+                await _cacheService.SetAsync(key, newValue, TimeSpan.FromMinutes(5)).ConfigureAwait(false);
                 
-                _logger.LogInformation("Cache MISS for key: {Key}. Generated new value.", key);
+                _logger.TestEndpointHit(endpoint: "GET /api/test/cache/{key} - MISS", traceId: HttpContext.TraceIdentifier);
                 
                 return Ok(new 
                 { 
@@ -52,7 +52,7 @@ public class TestController : ControllerBase
                 });
             }
             
-            _logger.LogInformation("Cache HIT for key: {Key}", key);
+            _logger.TestEndpointHit(endpoint: "GET /api/test/cache/{key} - HIT", traceId: HttpContext.TraceIdentifier);
             
             return Ok(new 
             { 
@@ -64,7 +64,7 @@ public class TestController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error testing cache for key: {Key}", key);
+            _logger.TestEndpointFailed(endpoint: "GET /api/test/cache/{key}", ex);
             return StatusCode(500, new { error = ex.Message });
         }
     }
@@ -75,14 +75,14 @@ public class TestController : ControllerBase
         ArgumentNullException.ThrowIfNull(key);
         try
         {
-            await _cacheService.RemoveAsync(key);
-            _logger.LogInformation("Removed key from cache: {Key}", key);
+            await _cacheService.RemoveAsync(key).ConfigureAwait(false);
+            _logger.TestEndpointHit(endpoint: "DELETE /api/test/cache/{key}", traceId: HttpContext.TraceIdentifier);
             
             return Ok(new { message = $"Key '{key}' removed from cache" });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error removing key from cache: {Key}", key);
+            _logger.TestEndpointFailed(endpoint: "DELETE /api/test/cache/{key}", ex);
             return StatusCode(500, new { error = ex.Message });
         }
     }
@@ -134,9 +134,9 @@ public class TestController : ControllerBase
                 query = "Hola, ¿cómo estás? ¿Puedes ayudarme con documentación técnica?";
             }
 
-            var response = await _llmClient.ChatAsync(query);
+            var response = await _llmClient.ChatAsync(query).ConfigureAwait(false);
             
-            _logger.LogInformation("Chat test completed for query: {Query}", query);
+            _logger.TestEndpointHit(endpoint: "POST /api/test/chat", traceId: HttpContext.TraceIdentifier);
             
             return Ok(new 
             { 
@@ -149,7 +149,7 @@ public class TestController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error testing chat for query: {Query}", query);
+            _logger.TestEndpointFailed(endpoint: "POST /api/test/chat", ex);
             return StatusCode(500, new { 
                 error = ex.Message, 
                 query = query,
@@ -179,9 +179,9 @@ public class TestController : ControllerBase
                 request!.OrganizationId, 
                 request.PlanId, 
                 request.SuccessUrl, 
-                request.CancelUrl);
+                request.CancelUrl).ConfigureAwait(false);
             
-            _logger.LogInformation("Billing checkout test completed for organization: {OrgId}, plan: {Plan}", request.OrganizationId, request.PlanId);
+            _logger.TestEndpointHit(endpoint: "POST /api/test/billing/checkout", traceId: HttpContext.TraceIdentifier);
             
             return Ok(new 
             { 
@@ -194,7 +194,7 @@ public class TestController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error testing billing checkout for organization: {OrgId}", request?.OrganizationId);
+            _logger.TestEndpointFailed(endpoint: "POST /api/test/billing/checkout", ex);
             return StatusCode(500, new { error = ex.Message });
         }
     }
@@ -216,7 +216,7 @@ public class TestController : ControllerBase
             // Usar AutoMapper para mapear a DTO
             var projectDto = _mapper.Map<TestProjectDto>(testProject);
             
-            _logger.LogInformation("AutoMapper test completed for project: {ProjectId}", testProject.Id);
+            _logger.TestEndpointHit(endpoint: "GET /api/test/mapper", traceId: HttpContext.TraceIdentifier);
             
             return Ok(new 
             { 
@@ -228,7 +228,7 @@ public class TestController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error testing AutoMapper");
+            _logger.TestEndpointFailed(endpoint: "GET /api/test/mapper", ex);
             return StatusCode(500, new { error = ex.Message });
         }
     }
@@ -245,7 +245,7 @@ public class TestController : ControllerBase
             {
                 // Guardar en sesión
                 HttpContext.Session.SetString(sessionKey, System.Text.Json.JsonSerializer.Serialize(data));
-                _logger.LogInformation("Session data stored for key: {Key}", sessionKey);
+                _logger.TestEndpointHit(endpoint: "POST /api/test/session - store", traceId: HttpContext.TraceIdentifier);
                 
                 return Ok(new 
                 { 
@@ -259,7 +259,7 @@ public class TestController : ControllerBase
             {
                 // Leer de sesión
                 var sessionData = HttpContext.Session.GetString(sessionKey);
-                _logger.LogInformation("Session data retrieved for key: {Key}", sessionKey);
+                _logger.TestEndpointHit(endpoint: "POST /api/test/session - retrieve", traceId: HttpContext.TraceIdentifier);
                 
                 return Ok(new 
                 { 
@@ -272,7 +272,7 @@ public class TestController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error testing session");
+            _logger.TestEndpointFailed(endpoint: "POST /api/test/session", ex);
             return StatusCode(500, new { error = ex.Message });
         }
     }

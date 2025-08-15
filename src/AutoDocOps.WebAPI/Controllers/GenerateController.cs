@@ -20,34 +20,6 @@ public class GenerateController : ControllerBase
     private readonly IMediator _mediator;
     private readonly ILogger<GenerateController> _logger;
 
-    // LoggerMessage delegates for performance optimization
-    private static readonly Action<ILogger, Guid, Guid, Exception?> LogDocumentationStarted =
-        LoggerMessage.Define<Guid, Guid>(LogLevel.Information, new EventId(1, "DocumentationStarted"), 
-            "Started documentation generation for project {ProjectId}, passport {PassportId}");
-
-    private static readonly Action<ILogger, Guid, Exception?> LogInvalidRequest =
-        LoggerMessage.Define<Guid>(LogLevel.Warning, new EventId(2, "InvalidRequest"),
-            "Invalid documentation generation request for project {ProjectId}");
-
-    private static readonly Action<ILogger, Guid, Exception?> LogGenerationError =
-        LoggerMessage.Define<Guid>(LogLevel.Error, new EventId(3, "GenerationError"),
-            "Error generating documentation for project {ProjectId}");
-
-    private static readonly Action<ILogger, Guid, Exception?> LogRetrievingStatus =
-        LoggerMessage.Define<Guid>(LogLevel.Information, new EventId(4, "RetrievingStatus"),
-            "Retrieving generation status for project {ProjectId}");
-
-    private static readonly Action<ILogger, Guid, Exception?> LogStatusError =
-        LoggerMessage.Define<Guid>(LogLevel.Error, new EventId(5, "StatusError"),
-            "Error retrieving generation status for project {ProjectId}");
-
-    private static readonly Action<ILogger, Guid, Exception?> LogCancellingGeneration =
-        LoggerMessage.Define<Guid>(LogLevel.Information, new EventId(6, "CancellingGeneration"),
-            "Cancelling documentation generation for project {ProjectId}");
-
-    private static readonly Action<ILogger, Guid, Exception?> LogCancelError =
-        LoggerMessage.Define<Guid>(LogLevel.Error, new EventId(7, "CancelError"),
-            "Error cancelling generation for project {ProjectId}");
 
     public GenerateController(IMediator mediator, ILogger<GenerateController> logger)
     {
@@ -79,7 +51,7 @@ public class GenerateController : ControllerBase
 
             var result = await _mediator.Send(command).ConfigureAwait(false);
 
-            LogDocumentationStarted(_logger, request.ProjectId, result.Id, null);
+            _logger.DocumentationStarted(request.ProjectId, result.Id);
 
             // Return 202 Accepted since this is an async operation
             Response.Headers.Append("Location", $"/api/v1/passports/{result.Id}");
@@ -87,7 +59,7 @@ public class GenerateController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            LogInvalidRequest(_logger, request.ProjectId, ex);
+            _logger.InvalidRequest(request.ProjectId, ex);
             
             return BadRequest(new ProblemDetails
             {
@@ -98,7 +70,7 @@ public class GenerateController : ControllerBase
         }
         catch (Exception ex)
         {
-            LogGenerationError(_logger, request.ProjectId, ex);
+            _logger.GenerationError(request.ProjectId, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
@@ -122,7 +94,7 @@ public class GenerateController : ControllerBase
     {
         try
         {
-            LogRetrievingStatus(_logger, projectId, null);
+            _logger.RetrievingStatus(projectId);
             
             // Get the latest passport for the project to check status  
             // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
@@ -162,7 +134,7 @@ public class GenerateController : ControllerBase
         }
         catch (Exception ex)
         {
-            LogStatusError(_logger, projectId, ex);
+            _logger.StatusError(projectId, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
@@ -186,7 +158,7 @@ public class GenerateController : ControllerBase
     {
         try
         {
-            LogCancellingGeneration(_logger, projectId, null);
+            _logger.CancellingGeneration(projectId);
             
             // Get the latest generating passport for the project
             // Preservar contexto ASP.NET para HttpContext/User (ver docs Microsoft CA2007)
@@ -238,7 +210,7 @@ public class GenerateController : ControllerBase
         }
         catch (Exception ex)
         {
-            LogCancelError(_logger, projectId, ex);
+            _logger.CancelError(projectId, ex);
             
             return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
             {
